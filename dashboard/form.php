@@ -1,5 +1,5 @@
 <?php
-include 'db.php';
+include '../database/db.php';
 
 $table = $_GET['table'] ?? 'faq';
 $id = $_GET['id'] ?? null;
