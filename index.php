@@ -1,5 +1,6 @@
 <?php 
-include '../database/db.php';   // Lidhet me Supabase
+// LIDHJA ME DATABASE (Shtegu i saktë nga root)
+include 'database/db.php'; 
 ?>
 
 <!DOCTYPE html>
@@ -11,8 +12,7 @@ include '../database/db.php';   // Lidhet me Supabase
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #f8f9fa; }
-        .sidebar .list-group-item { border-radius: 0; }
-        .table th { position: sticky; top: 0; background: #343a40; }
+        .sidebar .list-group-item.active { background-color: #0d6efd; color: white; }
     </style>
 </head>
 <body>
@@ -20,7 +20,7 @@ include '../database/db.php';   // Lidhet me Supabase
 <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container-fluid">
         <a class="navbar-brand" href="index.php">🛠 ChatBot Admin Dashboard</a>
-        <a href="../chatbot.php" class="btn btn-outline-light btn-sm">← Kthehu në Chatbot (Faqja Kryesore)</a>
+        <a href="chatbot.php" class="btn btn-outline-light btn-sm">← Kthehu në Chatbot</a>
     </div>
 </nav>
 
@@ -45,19 +45,38 @@ include '../database/db.php';   // Lidhet me Supabase
             </div>
         </div>
 
-        <!-- Përmbajtja kryesore -->
+        <!-- Përmbajtja -->
         <div class="col-md-10">
             <div class="card shadow-sm">
-                <div class="card-header d-flex justify-content-between align-items-center bg-white">
+                <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">Tabela: <strong><?php echo ucfirst(str_replace('_', ' ', $current_table)); ?></strong></h5>
                     <a href="form.php?table=<?php echo $current_table; ?>" class="btn btn-primary btn-sm">
                         ➕ Shto Rekord të Ri
                     </a>
                 </div>
                 
-                <div class="card-body p-0">
+                <div class="card-body">
                     <?php
                     try {
+                        // Funksioni getPrimaryKey (e vendosim këtu për siguri)
+                        if (!function_exists('getPrimaryKey')) {
+                            function getPrimaryKey($pdo, $table) {
+                                try {
+                                    $stmt = $pdo->prepare("
+                                        SELECT a.attname AS column_name
+                                        FROM pg_index i
+                                        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                                        WHERE i.indrelid = :table::regclass AND i.indisprimary
+                                    ");
+                                    $stmt->execute(['table' => $table]);
+                                    $result = $stmt->fetch();
+                                    return $result['column_name'] ?? 'id';
+                                } catch (Exception $e) {
+                                    return 'id';
+                                }
+                            }
+                        }
+
                         $pk = getPrimaryKey($pdo, $current_table);
                         
                         $stmt = $pdo->query("SELECT * FROM $current_table ORDER BY $pk ASC");
@@ -65,20 +84,19 @@ include '../database/db.php';   // Lidhet me Supabase
 
                         if (count($rows) > 0) {
                             echo '<div class="table-responsive">';
-                            echo '<table class="table table-bordered table-hover mb-0">';
+                            echo '<table class="table table-bordered table-hover">';
                             echo '<thead class="table-dark"><tr>';
                             
                             foreach (array_keys($rows[0]) as $col) {
                                 echo "<th>" . ucfirst(str_replace('_', ' ', $col)) . "</th>";
                             }
-                            echo '<th style="width: 140px;">Veprime</th></tr></thead><tbody>';
+                            echo '<th>Veprime</th></tr></thead><tbody>';
 
                             foreach ($rows as $row) {
                                 echo "<tr>";
                                 foreach ($row as $val) {
-                                    $display = (is_string($val) && strlen($val) > 50) 
-                                               ? htmlspecialchars(substr($val, 0, 47)) . '...' 
-                                               : htmlspecialchars($val ?? '');
+                                    $display = htmlspecialchars((string)($val ?? ''));
+                                    if (strlen($display) > 60) $display = substr($display, 0, 57) . '...';
                                     echo "<td>" . $display . "</td>";
                                 }
 
@@ -86,16 +104,16 @@ include '../database/db.php';   // Lidhet me Supabase
                                 echo "<td>
                                         <a href='form.php?table=$current_table&id=$id' class='btn btn-warning btn-sm'>Edit</a>
                                         <a href='delete.php?table=$current_table&id=$id' class='btn btn-danger btn-sm' 
-                                           onclick=\"return confirm('Je i sigurt që do ta fshish këtë rekord?')\">Fshi</a>
+                                           onclick=\"return confirm('Je i sigurt që do ta fshish?')\">Fshi</a>
                                       </td>";
                                 echo "</tr>";
                             }
                             echo '</tbody></table></div>';
                         } else {
-                            echo "<div class='p-4 text-center'><p class='text-muted'>Nuk ka të dhëna në këtë tabelë.</p></div>";
+                            echo "<p class='text-center text-muted p-4'>Nuk ka të dhëna në këtë tabelë.</p>";
                         }
                     } catch (Exception $e) {
-                        echo "<div class='alert alert-danger m-3'>Gabim: " . $e->getMessage() . "</div>";
+                        echo "<div class='alert alert-danger'>Gabim: " . htmlspecialchars($e->getMessage()) . "</div>";
                     }
                     ?>
                 </div>
@@ -104,6 +122,5 @@ include '../database/db.php';   // Lidhet me Supabase
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
