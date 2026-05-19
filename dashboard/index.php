@@ -1,6 +1,6 @@
 <?php 
-// LIDHJA ME DATABASE (Shtegu i saktë nga root)
-include 'database/db.php'; 
+
+include '../database/db.php'; 
 ?>
 
 <!DOCTYPE html>
@@ -58,7 +58,6 @@ include 'database/db.php';
                 <div class="card-body">
                     <?php
                     try {
-                        // Funksioni getPrimaryKey (e vendosim këtu për siguri)
                         if (!function_exists('getPrimaryKey')) {
                             function getPrimaryKey($pdo, $table) {
                                 try {
