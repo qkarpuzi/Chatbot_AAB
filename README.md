@@ -105,4 +105,4 @@ Shënime të rëndësishme
 Mos e fikni Apache kur punoni.
 MySQL mund ta lini të fikur (nuk ju nevojitet më).
 Në PostgreSQL emrat e tabelave dhe kolonave janë case-sensitive.
-Nëse keni probleme me queries, na tregoni që t’ju ndihmojmë t’i konvertojmë.
+Nëse keni probleme me queries, na tregoni që t’ju ndihmojmë t’i konvertojmë.    
