@@ -1,6 +1,6 @@
 <?php
     session_start();
-    include '/database/db.php';
+    include './database/db.php';
     $_SESSION = array();
     if (ini_get("session.use_cookies")) {
         $params = session_get_cookie_params();

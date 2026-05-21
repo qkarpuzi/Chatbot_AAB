@@ -1,6 +1,6 @@
 <?php
 session_start();
-include '/database/db.php';
+include './database/db.php';
 
 $fail = "";
 $success = "";
