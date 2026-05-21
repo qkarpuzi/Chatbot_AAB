@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['admin_id'] = $row['admin_id'];
                 $_SESSION['admin_name'] = $row['username'];
 
-                header("Location: ../dashboard/index.php");
+                header("Location: ./dashboard/index.php");
                 exit(); 
             } else {
                 $fail = "Invalid password";
