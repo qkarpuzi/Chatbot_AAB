@@ -1,78 +1,125 @@
 <?php
 
-header("Content-Type: application/json");
-
 // =======================
-// LIDHJA ME DATABAZE
+// SUPABASE CONNECTION
 // =======================
 
-$conn = new mysqli("localhost", "root", "", "aab_chatbot_db");
+$host = 'aws-0-eu-west-1.pooler.supabase.com';
+$port = '5432';
+$db   = 'postgres';
+$user = 'postgres.vvnjnnrfiamqwhateovt';
+$pass = 'F#x6$bmA&mfMZvs';
 
-if ($conn->connect_error) {
+$dsn = "pgsql:host=$host;port=$port;dbname=$db;sslmode=require";
 
-    die(json_encode([
-        "status" => "error",
-        "reply" => "Lidhja me databazen deshtoi."
-    ]));
-}
-
-// =======================
-// MERR INPUT NGA FRONTEND
-// =======================
-
-$data = json_decode(file_get_contents("php://input"), true);
-
-// Kontrollo input bosh
-if (!isset($data['message']) || empty(trim($data['message']))) {
-
-    echo json_encode([
-        "status" => "empty",
-        "reply" => "Ju lutem shkruani nje pyetje."
+try {
+    $pdo = new PDO($dsn, $user, $pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
     ]);
-
-    exit;
+} catch (Exception $e) {
+    die("DB connection failed: " . $e->getMessage());
 }
 
-// Mesazhi i userit
-$message = strtolower(trim($data['message']));
-
 // =======================
-// FUNKSIONI PER GJETJE
+// INPUT
 // =======================
 
-function merrPergjigjen($conn, $message)
+$message = $_POST['message'] ?? "";
+$message = mb_strtolower($message, 'UTF-8');
+$message = preg_replace('/[^\p{L}\p{N}\s]/u', '', $message);
+
+// =======================
+// UI
+// =======================
+
+echo "<h2>ChatBot AAB</h2>";
+
+echo "<form method='POST'>
+        <input type='text' name='message' placeholder='Shkruaj pyetjen...' required>
+        <button type='submit'>Send</button>
+      </form>";
+
+if ($message == "") exit;
+
+// =======================
+// NORMALIZER FUNCTION
+// =======================
+
+function normalize($text) {
+    $text = mb_strtolower($text, 'UTF-8');
+    $text = preg_replace('/[^\p{L}\p{N}\s]/u', '', $text);
+    $text = preg_replace('/\s+/', ' ', $text);
+    return trim($text);
+}
+
+// =======================
+// SMART SEARCH (FIXED)
+// =======================
+
+function merrPergjigjen($pdo, $message)
 {
+    $message = normalize($message);
 
-    $sql = "SELECT * FROM locations WHERE is_active = 1";
+    $stmt = $pdo->query("SELECT * FROM locations");
+    $locations = $stmt->fetchAll();
 
-    $result = $conn->query($sql);
+    $bestMatch = null;
+    $bestScore = 0;
 
-    if ($result->num_rows > 0) {
+    foreach ($locations as $row) {
 
-        while ($row = $result->fetch_assoc()) {
+        $name = normalize($row['name']);
+        $desc = normalize($row['description']);
 
-            // Emri i lokacionit
-            $locationName = strtolower($row['name']);
+        $score = 0;
 
-            // Kontrollon nese useri e permend lokacionin
-            if (strpos($message, $locationName) !== false) {
+        // 1. direct match
+        if (strpos($message, $name) !== false) {
+            $score += 10;
+        }
 
-                return [
-                    "status" => "success",
+        // 2. word match
+        $words = explode(" ", $name);
 
-                    "reply" =>
-                        "📍 Lokacioni: " . $row['name'] .
-                        "\n🏢 Kati: " . $row['floor'] .
-                        "\n🚪 Dhoma: " . $row['room_number'] .
-                        "\n📝 Pershkrimi: " . $row['description'],
-
-                    "location_id" => $row['location_id']
-                ];
+        foreach ($words as $w) {
+            if (strlen($w) > 2 && strpos($message, $w) !== false) {
+                $score += 2;
             }
+        }
+
+        // 3. description match (SHUMË E RËNDËSISHME)
+        $descWords = explode(" ", $desc);
+
+        foreach ($descWords as $w) {
+            if (strlen($w) > 3 && strpos($message, $w) !== false) {
+                $score += 1;
+            }
+        }
+
+        // 4. synonym fix
+        if ($name == "biblioteka" && strpos($message, "librari") !== false) {
+            $score += 8;
+        }
+
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $bestMatch = $row;
         }
     }
 
-    // Nese nuk gjendet
+    if ($bestMatch && $bestScore >= 2) {
+        return [
+            "status" => "success",
+            "reply" =>
+                "📍 Lokacioni: " . $bestMatch['name'] . "\n" .
+                "🏢 Kati: " . $bestMatch['floor'] . "\n" .
+                "🚪 Dhoma: " . $bestMatch['room_number'] . "\n" .
+                "📝 Pershkrimi: " . $bestMatch['description'],
+            "location_id" => $bestMatch['location_id']
+        ];
+    }
+
     return [
         "status" => "not_found",
         "reply" => "Nuk u gjet asnje lokacion."
@@ -80,41 +127,31 @@ function merrPergjigjen($conn, $message)
 }
 
 // =======================
-// THIRR FUNKSIONIN
+// RUN
 // =======================
 
-$response = merrPergjigjen($conn, $message);
+$response = merrPergjigjen($pdo, $message);
 
 // =======================
-// RUAJ MESAZHIN NE DATABASE
+// SAVE CHAT
 // =======================
 
-$userQuestion = $conn->real_escape_string($message);
-$botReply = $conn->real_escape_string($response['reply']);
+$stmt = $pdo->prepare("
+    INSERT INTO chat_messages (user_question, bot_response, matched_type, matched_location_id)
+    VALUES (:q, :r, 'location', :id)
+");
 
-$matchedLocationId = isset($response['location_id'])
-    ? $response['location_id']
-    : "NULL";
-
-$insertSql = "
-INSERT INTO chat_messages
-(user_question, bot_response, matched_type, matched_location_id)
-
-VALUES
-(
-    '$userQuestion',
-    '$botReply',
-    'location',
-    $matchedLocationId
-)
-";
-
-$conn->query($insertSql);
+$stmt->execute([
+    ':q' => $message,
+    ':r' => $response['reply'],
+    ':id' => $response['location_id'] ?? null
+]);
 
 // =======================
-// KTHE JSON RESPONSE
+// OUTPUT
 // =======================
 
-echo json_encode($response);
+echo "<hr><h3>Pergjigja:</h3>";
+echo nl2br($response['reply']);
 
 ?>
