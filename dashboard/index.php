@@ -1,5 +1,5 @@
 <?php 
-
+require_once 'auth.php';
 include '../database/db.php'; 
 ?>
 
