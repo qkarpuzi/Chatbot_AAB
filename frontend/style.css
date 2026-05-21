@@ -1,0 +1,299 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  background: #f2f3f5;
+  overflow: hidden;
+}
+
+.app {
+  width: 100vw;
+  height: 100vh;
+  background: #fff;
+  display: flex;
+}
+
+/* SIDEBAR */
+
+.sidebar {
+  width: 300px;
+  background: linear-gradient(180deg, #7d0715 0%, #52040c 55%, #300006 100%);
+  color: white;
+  padding: 32px 26px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+
+.sidebar::before {
+  content: "";
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  background-repeat: no-repeat;
+  background-size: contain;
+  opacity: 0.10;
+  top: -70px;
+  left: -90px;
+}
+
+.sidebar > * {
+  position: relative;
+  z-index: 2;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 58px;
+}
+
+.logo-circle,
+.mini-logo,
+.bot-icon {
+  border-radius: 50%;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.logo-circle {
+  width: 58px;
+  height: 58px;
+  min-width: 58px;
+}
+
+.logo-circle img,
+.mini-logo img,
+.bot-icon img {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+}
+
+.brand h2 {
+  font-size: 25px;
+  font-weight: 700;
+}
+
+.brand p {
+  font-size: 14px;
+  margin-top: 4px;
+  opacity: 0.9;
+}
+
+.sidebar-info {
+  width: 100%;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 18px;
+  padding: 24px 22px;
+}
+
+.sidebar-info h3 {
+  font-size: 22px;
+  margin-bottom: 18px;
+}
+
+.sidebar-info p {
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.bottom-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  font-size: 16px;
+  padding-bottom: 10px;
+}
+
+.bottom-menu a {
+  color: white;
+  text-decoration: none;
+}
+
+/* MAIN */
+
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #f6f7f9;
+}
+
+.header {
+  height: 100px;
+  background: white;
+  border-bottom: 1px solid #dedede;
+  padding: 0 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.mini-logo {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  border: 1px solid #dddddd;
+}
+
+.header h3 {
+  font-size: 23px;
+  margin-bottom: 6px;
+  color: #050505;
+}
+
+.header p {
+  font-size: 15px;
+  color: #666;
+}
+
+.college-logo img {
+  width: 285px;
+  height: auto;
+  display: block;
+}
+
+/* BODY */
+
+.chat-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 35px;
+}
+
+.welcome-box {
+  width: 470px;
+  background: white;
+  border-radius: 18px;
+  padding: 42px 38px;
+  text-align: center;
+  box-shadow: 0 14px 35px rgba(0,0,0,0.08);
+  border: 1px solid #ececec;
+}
+
+.bot-icon {
+  width: 78px;
+  height: 78px;
+  background: #9b0c1a;
+  margin: 0 auto 24px;
+}
+
+.bot-icon img {
+  width: 72%;
+  height: 72%;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+
+.welcome-box h2 {
+  font-size: 28px;
+  margin-bottom: 14px;
+  color: #050505;
+}
+
+.welcome-box p {
+  font-size: 17px;
+  color: #666;
+  line-height: 1.6;
+}
+
+/* INPUT */
+
+.input-area {
+  height: 88px;
+  background: white;
+  border-top: 1px solid #dedede;
+  padding: 14px 34px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.input-area input {
+  flex: 1;
+  height: 56px;
+  border: 1px solid #dcdcdc;
+  border-radius: 13px;
+  padding: 0 20px;
+  font-size: 16px;
+  outline: none;
+}
+
+.send {
+  width: 60px;
+  height: 56px;
+  border: none;
+  border-radius: 12px;
+  background: #9b0c1a;
+  color: white;
+  font-size: 24px;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+
+  .header {
+    height: 78px;
+    padding: 0 18px;
+  }
+
+  .college-logo {
+    display: none;
+  }
+
+  .mini-logo {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+  }
+
+  .header h3 {
+    font-size: 16px;
+  }
+
+  .header p {
+    font-size: 12px;
+  }
+
+  .chat-body {
+    padding: 20px;
+  }
+
+  .welcome-box {
+    width: 100%;
+    padding: 30px 22px;
+  }
+
+  .input-area {
+    padding: 12px;
+  }
+}
