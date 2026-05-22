@@ -19,8 +19,11 @@ include '../database/db.php';
 
 <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container-fluid">
-        <a class="navbar-brand" href="index.php">🛠 ChatBot Admin Dashboard</a>
-        <a href="chatbot.php" class="btn btn-outline-light btn-sm">← Kthehu në Chatbot</a>
+        <a class="navbar-brand" href="indexadmin.php">🛠 ChatBot Admin Dashboard</a>
+        <div>
+            <a href="../index.php" class="btn btn-outline-light btn-sm me-2">← Kthehu në Chatbot</a>
+            <a href="../logout.php" class="btn btn-danger btn-sm">Dilni (Logout)</a>
+        </div>
     </div>
 </nav>
 
@@ -31,7 +34,7 @@ include '../database/db.php';
         <div class="col-md-2">
             <div class="list-group sidebar">
                 <?php
-                $tables = ['admin', 'chat_messages', 'default_responses', 'directions', 'faq', 
+$tables = ['admins', 'chat_messages', 'default_responses', 'directions', 'faq', 
                           'faq_categories', 'faq_keywords', 'keywords', 'locations'];
                 
                 $current_table = $_GET['table'] ?? 'locations';
@@ -56,10 +59,20 @@ include '../database/db.php';
                 </div>
                 
                 <div class="card-body">
+                    <!-- Search Bar -->
+                    <form method="GET" action="indexadmin.php" class="mb-3 d-flex">
+                        <input type="hidden" name="table" value="<?php echo htmlspecialchars($current_table); ?>">
+                        <input type="text" name="search" class="form-control me-2" placeholder="Kërko me fjalë, shkurtesa etj..." value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>">
+                        <button type="submit" class="btn btn-secondary">Kërko</button>
+                        <?php if(!empty($_GET['search'])): ?>
+                            <a href="indexadmin.php?table=<?php echo htmlspecialchars($current_table); ?>" class="btn btn-outline-danger ms-2">Pastro</a>
+                        <?php endif; ?>
+                    </form>
+                    
                     <?php
                     try {
                         if (!function_exists('getPrimaryKey')) {
-                            function getPrimaryKey($pdo, $table) {
+                            function getPrimaryKey(PDO $pdo, string $table) {
                                 try {
                                     $stmt = $pdo->prepare("
                                         SELECT a.attname AS column_name
@@ -78,7 +91,29 @@ include '../database/db.php';
 
                         $pk = getPrimaryKey($pdo, $current_table);
                         
-                        $stmt = $pdo->query("SELECT * FROM $current_table ORDER BY $pk ASC");
+                        // Handle Search
+                        $search = $_GET['search'] ?? '';
+                        $whereClause = "";
+                        $params = [];
+                        
+                        if (!empty($search)) {
+                            // Fetch column names from information_schema dynamically
+                            $colQ = $pdo->prepare("SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = :tbl");
+                            $colQ->execute(['tbl' => $current_table]);
+                            $cols = $colQ->fetchAll(PDO::FETCH_COLUMN);
+                            
+                            if (count($cols) > 0) {
+                                $whereParts = [];
+                                foreach ($cols as $col) {
+                                    $whereParts[] = "\"$col\"::text ILIKE :search";
+                                }
+                                $whereClause = "WHERE " . implode(" OR ", $whereParts);
+                                $params['search'] = "%$search%";
+                            }
+                        }
+                        
+                        $stmt = $pdo->prepare("SELECT * FROM $current_table $whereClause ORDER BY $pk ASC");
+                        $stmt->execute($params);
                         $rows = $stmt->fetchAll();
 
                         if (count($rows) > 0) {

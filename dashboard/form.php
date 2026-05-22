@@ -93,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $stmt->execute($values);
         }
         
-        header("Location: index.php?table=$table");
+        header("Location: indexadmin.php?table=$table");
         exit;
     } catch (PDOException $e) {
         die("❌ Gabim gjatë ruajtjes në databazë: " . $e->getMessage());
@@ -171,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 
                 <div class="mt-4 d-grid gap-2">
                     <button type="submit" class="btn btn-success btn-lg">Ruaj të dhënat</button>
-                    <a href="index.php?table=<?php echo $table; ?>" class="btn btn-light border">Anulo</a>
+                    <a href="indexadmin.php?table=<?php echo $table; ?>" class="btn btn-light border">Anulo</a>
                 </div>
             </form>
             

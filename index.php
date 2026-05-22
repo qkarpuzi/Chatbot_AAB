@@ -1,10 +1,12 @@
 <?php
+session_start();
+
 // =======================
 // SUPABASE CONNECTION
 // =======================
 
 $host = 'aws-0-eu-west-1.pooler.supabase.com';
-$port = '5432';
+$port = '6543'; // 6543 për t'u shmangur vonesave
 $db   = 'postgres';
 $user = 'postgres.vvnjnnrfiamqwhateovt';
 $pass = 'F#x6$bmA&mfMZvs';
@@ -14,7 +16,8 @@ $dsn = "pgsql:host=$host;port=$port;dbname=$db;sslmode=require";
 try {
     $pdo = new PDO($dsn, $user, $pass, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => true
     ]);
 } catch (Exception $e) {
     die("DB connection failed: " . $e->getMessage());
@@ -24,7 +27,7 @@ try {
 // NORMALIZER FUNCTION
 // =======================
 
-function normalize($text) {
+function normalize(string $text) {
     $text = mb_strtolower($text, 'UTF-8');
     $text = preg_replace('/[^\p{L}\p{N}\s]/u', '', $text);
     $text = preg_replace('/\s+/', ' ', $text);
@@ -35,7 +38,7 @@ function normalize($text) {
 // SMART SEARCH
 // =======================  
 
-function merrPergjigjen($pdo, $message) {
+function merrPergjigjen(PDO $pdo, string $message) {
     $message = normalize($message);
 
     $stmt = $pdo->query("SELECT * FROM locations");
@@ -127,148 +130,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($user_raw_message))) {
     ]);
 }
 ?>
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="sq">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChatBot AAB Portal</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #1e1e24;
-            color: #ffffff;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .container {
-            width: 100%;
-            max-width: 550px;
-            padding: 30px;
-            background: #2a2a32;
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-            box-sizing: border-box;
-            position: relative;
-        }
-        .header-area {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #3a3a44;
-            padding-bottom: 15px;
-            margin-bottom: 25px;
-        }
-        h1 {
-            font-size: 1.6rem;
-            margin: 0;
-            color: #ffffff;
-        }
-        .btn-nav-login {
-            text-decoration: none;
-            background-color: transparent;
-            color: #a0a0a8;
-            border: 1px solid #4a4a54;
-            padding: 6px 14px;
-            font-size: 0.85rem;
-            border-radius: 4px;
-            transition: all 0.2s ease;
-        }
-        .btn-nav-login:hover {
-            background-color: #007bff;
-            color: white;
-            border-color: #007bff;
-        }
-        .welcome-text {
-            color: #a0a0a8;
-            font-size: 0.95rem;
-            margin-top: 0;
-            margin-bottom: 20px;
-        }
-        .form-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 25px;
-        }
-        input[type='text'] {
-            flex: 1;
-            padding: 12px 16px;
-            background-color: #1e1e24;
-            border: 1px solid #4a4a54;
-            border-radius: 6px;
-            color: white;
-            font-size: 0.95rem;
-            outline: none;
-        }
-        input[type='text']:focus {
-            border-color: #007bff;
-        }
-        button[type='submit'] {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 0 22px;
-            font-size: 0.95rem;
-            font-weight: 600;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        button[type='submit']:hover {
-            background-color: #0056b3;
-        }
-        .response-box {
-            background-color: #1e1e24;
-            border-left: 4px solid #007bff;
-            padding: 15px 20px;
-            border-radius: 0 6px 6px 0;
-            animation: fadeIn 0.3s ease-in-out;
-        }
-        .response-title {
-            margin: 0 0 8px 0;
-            font-size: 0.9rem;
-            color: #a0a0a8;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .response-content {
-            font-size: 1rem;
-            line-height: 1.6;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(5px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AAB Chatbot</title>
+  <link rel="stylesheet" href="frontend/style.css">
 </head>
 <body>
 
-    <div class="container">
-        <div class="header-area">
-            <h1>ChatBot AAB</h1>
-            <a href="login.php" class="btn-nav-login">Kyqu në Dashboard →</a>
-        </div>
-        
-        <p class="welcome-text">Pyetni asistentin virtual rreth lokacioneve, zyrave apo sallave brenda kolegjit.</p>
-        
-        <form method="POST" class="form-group">
-            <input type="text" name="message" placeholder="Shkruaj pyetjen këtu (p.sh. Ku është biblioteka?)..." value="<?php echo htmlspecialchars($user_raw_message); ?>" required autocomplete="off">
-            <button type="submit">Dërgo</button>
-        </form>
+<div class="app">
 
-        <?php if (!empty($bot_reply_output)): ?>
-            <div class="response-box">
-                <p class="response-title">Përgjigjja:</p>
-                <div class="response-content">
-                    <?php echo $bot_reply_output; ?>
-                </div>
-            </div>
-        <?php endif; ?>
+  <aside class="sidebar">
+    <div>
+      <div class="brand">
+        <div class="logo-circle">
+          <img src="frontend/images/aab-logo (2).png" alt="AAB Logo">
+        </div>
+        <div>
+          <h2>AAB Chatbot</h2>
+          <p>Orientim në Universitet</p>
+        </div>
+      </div>
+
+      <div class="sidebar-info">
+        <h3>Asistent virtual</h3>
+        <p>
+          Ky chatbot është krijuar për t'i ndihmuar studentët dhe vizitorët
+          të gjejnë lokacionet brenda Kolegjit AAB.
+        </p>
+      </div>
     </div>
 
+    <div class="bottom-menu">
+      <?php if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true): ?>
+        <a href="dashboard/indexadmin.php" style="text-decoration:none; color:#0d6efd; font-weight:bold;">⚙ Shko te Dashboard-i</a>
+      <?php else: ?>
+        <a href="login.php" style="text-decoration:none; color:inherit;">⚙ Admin Login</a>
+      <?php endif; ?>
+    </div>
+  </aside>
+
+  <main class="chat-area">
+
+    <header class="header">
+      <div class="header-left">
+        <div class="mini-logo">
+          <img src="frontend/images/aab-logo (2).png" alt="AAB Logo" style="width:100%; height:100%; object-fit:cover;">
+        </div>
+        <div>
+          <h3>Chatbot Inteligjent për Orientim në AAB</h3>
+          <p>Jam këtu për t'ju ndihmuar të gjeni çdo lokacion në universitet.</p>
+        </div>
+      </div>
+    </header>
+
+    <section class="chat-body">
+      <div class="welcome-box">
+        <div class="bot-icon">
+          <img src="frontend/images/aab-logo (2).png" alt="AAB Logo" style="width:100%; height:100%; object-fit:cover;">
+        </div>
+        <h2>Mirë se vini në AAB Chatbot</h2>
+        <p>Shkruani pyetjen tuaj për të marrë ndihmë rreth lokacioneve në universitet.</p>
+      </div>
+
+      <?php if (!empty($bot_reply_output)): ?>
+      <div style="background:var(--card-bg); padding:15px; border-radius:12px; margin-bottom:15px; border:1px solid rgba(255,255,255,0.1); 
+                  border-left: 4px solid var(--primary-color);">
+        <p style="margin:0 0 10px 0; color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Përgjigja nga ChatBot:</p>
+        <div style="font-size:0.95rem; line-height:1.5;">
+          <?php echo $bot_reply_output; ?>
+        </div>
+      </div>
+      <?php endif; ?>
+    </section>
+
+    <form method="POST" action="index.php" style="margin:0;">
+      <footer class="input-area">
+        <input type="text" name="message" value="<?php echo htmlspecialchars($user_raw_message); ?>" placeholder="Shkruani pyetjen tuaj këtu..." required autocomplete="off">
+        <button type="submit" class="send">➤</button>
+      </footer>
+    </form>
+  </main>
+</div>
 </body>
 </html>

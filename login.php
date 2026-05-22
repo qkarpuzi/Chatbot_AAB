@@ -1,5 +1,12 @@
 <?php
 session_start();
+
+// Nëse është tashmë i identifikuar, dërgoje direkt në dashboard
+if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
+    header("Location: dashboard/indexadmin.php");
+    exit();
+}
+
 require_once './database/db.php'; 
 
 $error = "";
@@ -20,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['admin_id'] = $admin['admin_id'];
                 $_SESSION['logged_in'] = true;
 
-                header("Location: dashboard/index.php");
+                header("Location: dashboard/indexadmin.php");
                 exit;
             } else {
                 $error = "Përdoruesi ose fjalëkalimi është gabim.";

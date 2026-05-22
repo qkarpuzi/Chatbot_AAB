@@ -19,7 +19,7 @@ if (isset($_GET['table']) && isset($_GET['id'])) {
         $stmt->execute([$id]);
 
         // 3. Redirect me një mesazh suksesi (opsionale)
-        header("Location: index.php?table=$table&message=deleted");
+        header("Location: indexadmin.php?table=$table&message=deleted");
         exit;
 
     } catch (PDOException $e) {
