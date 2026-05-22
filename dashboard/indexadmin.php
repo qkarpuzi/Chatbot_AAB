@@ -130,8 +130,7 @@ $tables = ['admins', 'chat_messages', 'default_responses', 'directions', 'faq',
                                 echo "<tr>";
                                 foreach ($row as $val) {
                                     $display = htmlspecialchars((string)($val ?? ''));
-                                    if (strlen($display) > 60) $display = substr($display, 0, 57) . '...';
-                                    echo "<td>" . $display . "</td>";
+                                    echo "<td>" . nl2br($display) . "</td>";
                                 }
 
                                 $id = $row[$pk] ?? '';
