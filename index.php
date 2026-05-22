@@ -90,7 +90,7 @@ function merrPergjigjen(PDO $pdo, string $message) {
             "status" => "success",
             "reply" => "📍 Lokacioni: " . $bestMatch['name'] . "<br>" .
                        "🏢 Kati: " . $bestMatch['floor'] . "<br>" .
-                       "🚪 Dhoma: " . $bestMatch['room_number'] . "<br>" .
+                       "🚪 Salla: " . $bestMatch['room_number'] . "<br>" .
                        "📝 Përshkrimi: " . $bestMatch['description'],
             "location_id" => $bestMatch['location_id']
         ];
