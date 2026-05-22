@@ -33,7 +33,7 @@ function normalize($text) {
 
 // =======================
 // SMART SEARCH
-// =======================
+// =======================  
 
 function merrPergjigjen($pdo, $message) {
     $message = normalize($message);
