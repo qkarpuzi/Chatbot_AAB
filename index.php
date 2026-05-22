@@ -1,60 +1,63 @@
-<?php
-session_start();
-include './database/db.php';
-
-$fail = "";
-$login = "";
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email_or_user = trim($_POST['email']); 
-    $password = $_POST['password'];   
-    
-    try {
-        $sql = "SELECT * FROM admins WHERE username = :username OR email = :email";
-        $stmt = $pdo->prepare($sql);
-    
-        $stmt->execute([
-            ':username' => $email_or_user,
-            ':email'    => $email_or_user
-        ]);
-        
-        $row = $stmt->fetch();
-        
-        if ($row) {
-            if (password_verify($password, $row['password'])) {
-                $_SESSION['admin_id'] = $row['admin_id'];
-                $_SESSION['admin_name'] = $row['username'];
-
-                header("Location: ./dashboard/index.php");
-                exit(); 
-            } else {
-                $fail = "Invalid password";
-            }
-        } else {
-             $fail = "User not found";
-        }
-    } catch (\PDOException $e) {
-        $fail = "Database error: " . $e->getMessage();
-    }
-}
-?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-    <link rel="stylesheet" href="./assets/css/index.css">
+    <title>ChatBot College Portal</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e24;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            text-align: center;
+        }
+        .container {
+            max-width: 500px;
+            padding: 40px;
+            background: #2a2a32;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            color: #ffffff;
+        }
+        p {
+            color: #a0a0a8;
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+        }
+        .btn-login {
+            display: inline-block;
+            text-decoration: none;
+            background-color: #007bff;
+            color: white;
+            padding: 12px 30px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 5px;
+            transition: background 0.2s ease-in-out;
+        }
+        .btn-login:hover {
+            background-color: #0056b3;
+        }
+    </style>
 </head>
 <body>
-    <form method="post" id="login-form">
-        <h1>Login</h1>
-        <?php if(!empty($fail)): ?>
-            <p style="color: red; font-size: 14px; text-align: center;"><?php echo $fail; ?></p>
-        <?php endif; ?>
-        <input type="text" name="email" id="email" placeholder="Name or Email">
-        <input type="password" name="password" id="password" placeholder="Password">
-        <button id="submit">Login</button>
-    </form>
+
+    <div class="container">
+        <h1>ChatBot Portal</h1>
+        <p>Mirëseerdhët në sistemin e menaxhimit të ChatBot-it për Kolegjin.</p>
+        
+        <a href="login.php" class="btn-login">Kyqu në Dashboard</a>
+    </div>
+
 </body>
 </html>
