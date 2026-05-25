@@ -170,7 +170,7 @@ function krijoPergjigjeLokacioni(array $location, string $intro): string
     $room = (!empty($roomRaw) && $roomRaw != '0') ? htmlspecialchars((string)$roomRaw) : null;
 
     if ($room !== null) {
-        $reply = "Salla/Zyra <strong>{$room}</strong> ({$name}) ndodhet {$floorText} të Kolegjit AAB.";
+        $reply = "Përshendetje, <strong>{$room}</strong> ({$name}) ndodhet {$floorText} të Kolegjit AAB.";
     } else {
         $reply = "<strong>{$name}</strong> ndodhet {$floorText} të Kolegjit AAB.";
     }
@@ -179,7 +179,7 @@ function krijoPergjigjeLokacioni(array $location, string $intro): string
         $reply .= " " . $description;
     }
 
-    $reply .= "<br><br>Mund të më pyesni edhe për një lokacion tjetër, për shembull: <strong>Ku është salla 108?</strong>";
+    $reply .= "<br><br>Mund të më pyesni ndonjë gjë tjetër?</strong>";
     return $reply;
 }
 
@@ -550,7 +550,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($user_raw_message))) {
         }
 
         .chat-message.user .message-bubble {
-            background: #e00000;
+            background: #b60000;
             color: #000;
             border-bottom-right-radius: 4px;
         }
