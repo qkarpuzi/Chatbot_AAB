@@ -164,8 +164,8 @@ INSERT INTO `locations` (`location_id`, `name`, `description`, `floor`, `room_nu
 (13, 'Drejtoria e Administratës', 'Menaxhon çështjet administrative të institucionit.', 0, '0', 0.00, 0.00, 0),
 (14, 'Drejtoria e IT ', 'Kujdeset për infrastrukturën dhe sistemet e teknologjisë informative.', 0, '0', 0.00, 0.00, 0),
 (15, 'Drejtoria e Logjistikës ', 'Organizon burimet, pajisjet dhe furnizimet.', 0, '0', 0.00, 0.00, 0),
-(16, 'Help Desk I ', 'Ndihmë teknike bazike për përdoruesit.', 0, '0', 0.00, 0.00, 0),
-(17, 'Help Desk II ', 'Ndihmë teknike e avancuar për probleme komplekse.', 0, '0', 0.00, 0.00, 0),
+(16, 'Help Desk I ', 'Ndihmë teknike bazike për përdoruesit.', 0, '0', 0.00, 0.00, 1),
+(17, 'Help Desk II ', 'Ndihmë teknike e avancuar për probleme komplekse.', 0, '0', 0.00, 0.00, 1),
 (18, 'Informata', 'Zyrë për informim dhe udhëzime për studentë dhe staf.', 0, '0', 0.00, 0.00, 0),
 (19, 'Instituti', 'Njësi kërkimore dhe zhvillimore akademike.', 0, '0', 0.00, 0.00, 0),
 (20, 'IT – Help Obj-6', 'Pikë ndihme IT për Objektin 6.', 0, '0', 0.00, 0.00, 0),
@@ -270,7 +270,8 @@ INSERT INTO `locations` (`location_id`, `name`, `description`, `floor`, `room_nu
 (119, 'Ashensori', 'Në ndërtesë ka ashensor për lëvizje të lehtë ndërmjet kateve.', 3, '3', 3.00, 3.00, 3),
 (120, 'ATV', 'Hapësirë mediale dhe televizive për produksion dhe transmetim.', 4, '4', 4.00, 4.00, 4),
 (121, 'Tualetet', 'Në çdo kat ka nga 3 tualete për studentë dhe staf.', 4, '4', 4.00, 4.00, 4),
-(122, 'Ashensori', 'Në ndërtesë ka ashensor për lëvizje të lehtë ndërmjet kateve.', 4, '4', 4.00, 4.00, 4);
+(122, 'Ashensori', 'Në ndërtesë ka ashensor për lëvizje të lehtë ndërmjet kateve.', 4, '4', 4.00, 4.00, 4),
+(123, 'Teatri Kamertal', 'Sallë për shfaqje, evente, prezantime dhe aktivitete kulturore.', 4, '4.4', 4.00, 4.00, 1);
 
 --
 -- Indexes for dumped tables
