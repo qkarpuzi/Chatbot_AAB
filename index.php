@@ -663,7 +663,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($user_raw_message))) {
 
                 <div>
                     <h3>Chatbot Inteligjent për Orientim në AAB</h3>
-                    <p>Pyet për salla, zyra, administratë, bibliotekë ose informata rreth chatbotit.</p>
+                    <p>Pyet për salla, zyra, administratë, bibliotekë ose informata rreth Kolegjit AAB.</p>
                 </div>
             </div>
 
