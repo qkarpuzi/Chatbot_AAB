@@ -1,16 +1,31 @@
 <?php
 session_start();
- 
-// Inicializimi i historisë së chat-it dhe kontekstit
+
+/*
+  Krijojmë një ID unike për këtë bisedë.
+  Kjo e ndihmon chatbot-in ta dijë se cilat pyetje
+  i takojnë të njëjtit user gjatë një sesioni.
+*/
+if (!isset($_SESSION['chat_session_id'])) {
+    $_SESSION['chat_session_id'] = uniqid("aab_chat_", true);
+}
+
+$session_id = $_SESSION['chat_session_id'];
+
+// Inicializimi i historisë së chat-it
 if (!isset($_SESSION['chat_history'])) {
     $_SESSION['chat_history'] = [];
 }
+
+// Inicializimi i kontekstit të fundit
 if (!isset($_SESSION['last_context'])) {
     $_SESSION['last_context'] = [
         'type' => null,
         'id' => null,
         'name_or_query' => null,
-        'waiting_for_clarification' => null
+        'waiting_for_clarification' => null,
+        'pending_question' => null,
+        'last_locations' => []
     ];
 }
  
@@ -199,13 +214,18 @@ function searchLocation(PDO $pdo, string $message): ?array
         strpos($cleanMessage, 'qendror') === false) {
 
         if (mb_strpos($cleanMessage, 'dekanat') !== false) {
-            $_SESSION['last_context']['waiting_for_clarification'] = 'dekanat';
-            return [
-                "status" => "clarification", "matched_type" => "disambiguation_prompt",
-                "location_id" => null, "faq_id" => null, "suggested_match" => null,
-                "reply" => "Cilin dekanat po kërkoni? (p.sh., Shkenca Kompjuterike, Juridik, Ekonomik, etj.)"
-            ];
-        }
+    $_SESSION['last_context']['waiting_for_clarification'] = 'dekanat';
+    $_SESSION['last_context']['pending_question'] = 'dekanat';
+
+    return [
+        "status" => "clarification",
+        "matched_type" => "disambiguation_prompt",
+        "location_id" => null,
+        "faq_id" => null,
+        "suggested_match" => null,
+        "reply" => "Cilin dekanat po kërkoni? (p.sh., Shkenca Kompjuterike, Juridik, Ekonomik, Mjekësi, Gjuhë, etj.)"
+    ];
+}
         if (mb_strpos($cleanMessage, 'administrat') !== false) {
             $_SESSION['last_context']['waiting_for_clarification'] = 'administrata';
             return [
@@ -294,18 +314,158 @@ function searchLocation(PDO $pdo, string $message): ?array
 // =======================
 // SMART CHATBOT — MAIN
 // =======================
+function permbanNdonjeren(string $text, array $words): bool
+{
+    foreach ($words as $word) {
+        if (mb_strpos($text, $word) !== false) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function ndertoPyetjeNgaSqarimi(string $cType, string $message): string
+{
+    $text = normalize($message);
+
+    if ($cType === 'dekanat') {
+        if (permbanNdonjeren($text, ['shkenca', 'kompjuterike', 'komp', 'shkencave kompjuterike'])) {
+            return 'dekanati i shkencave kompjuterike';
+        }
+
+        if (permbanNdonjeren($text, ['juridik', 'juridike', 'jurid'])) {
+            return 'dekanati juridik';
+        }
+
+        if (permbanNdonjeren($text, ['ekonomik', 'ekonomike', 'ekonom'])) {
+            return 'dekanati ekonomik';
+        }
+
+        if (permbanNdonjeren($text, ['gjuhe', 'gjuhëve', 'anglisht'])) {
+            return 'dekanati i gjuhëve';
+        }
+
+        if (permbanNdonjeren($text, ['mjekesi', 'mjekesise', 'mjekësisë', 'mjekes'])) {
+            return 'dekanati i mjekësisë';
+        }
+
+        return 'dekanat ' . $message;
+    }
+
+    if ($cType === 'administrata') {
+        if (permbanNdonjeren($text, ['qendrore', 'qendror'])) {
+            return 'administrata qendrore';
+        }
+
+        if (permbanNdonjeren($text, ['shkenca', 'kompjuterike', 'komp'])) {
+            return 'administrata e shkencave kompjuterike';
+        }
+
+        if (permbanNdonjeren($text, ['juridik', 'juridike', 'jurid'])) {
+            return 'administrata juridike';
+        }
+
+        if (permbanNdonjeren($text, ['ekonomik', 'ekonomike', 'ekonom'])) {
+            return 'administrata ekonomike';
+        }
+
+        return 'administrata ' . $message;
+    }
+
+    if ($cType === 'referent') {
+        if (permbanNdonjeren($text, ['shkenca', 'kompjuterike', 'komp'])) {
+            return 'referentet e shkencave kompjuterike';
+        }
+
+        if (permbanNdonjeren($text, ['juridik', 'juridike', 'jurid'])) {
+            return 'referentet juridik';
+        }
+
+        if (permbanNdonjeren($text, ['ekonomik', 'ekonomike', 'ekonom'])) {
+            return 'referentet ekonomik';
+        }
+
+        return 'referent ' . $message;
+    }
+
+    return $cType . ' ' . $message;
+}
+
+function eshtePyetjeVazhduese(string $message): bool
+{
+    $text = normalize($message);
+
+    $phrases = [
+        'aty',
+        'atje',
+        'ajo',
+        'ai',
+        'saj',
+        'tij',
+        'po ajo',
+        'po ai',
+        'ne cilin kat',
+        'n cilin kat',
+        'cili kat',
+        'cka ka afer',
+        'qka ka afer',
+        'si shkoj aty',
+        'si shkoj atje',
+        'me trego me shume',
+        'me trego ma shume'
+    ];
+
+    return permbanNdonjeren($text, $phrases);
+}
+
+
+
 function merrPergjigjen(PDO $pdo, string $message): array
 {
     $cleanMessage = normalize($message);
     $searchMessage = normalizeForSearch($message);
-    
+
+    // Nëse chatbot-i më herët ka kërkuar sqarim
+    // p.sh. "Ku është dekanati?" -> "i shkencave kompjuterike"
     if (!empty($_SESSION['last_context']['waiting_for_clarification'])) {
         $cType = $_SESSION['last_context']['waiting_for_clarification'];
-        $combinedQuery = $cType . " " . $message;
+
+        $combinedQuery = ndertoPyetjeNgaSqarimi($cType, $message);
+
         $_SESSION['last_context']['waiting_for_clarification'] = null;
-        
+
         $result = searchLocation($pdo, $combinedQuery);
-        if ($result && $result['status'] === 'success') return $result;
+
+        if ($result && $result['status'] === 'success') {
+            return $result;
+        }
+
+        return [
+            "status" => "not_found",
+            "matched_type" => "clarification_not_found",
+            "location_id" => null,
+            "faq_id" => null,
+            "suggested_match" => null,
+            "reply" => "Më vjen keq, nuk arrita ta gjej këtë sqarim. Provoni ta shkruani më qartë, p.sh: <strong>Dekanati i Shkencave Kompjuterike</strong>."
+        ];
+    }
+
+    // Nëse user-i pyet vazhdimësi: "po aty?", "në cilin kat?", "si shkoj atje?"
+    if (eshtePyetjeVazhduese($message) && !empty($_SESSION['last_context']['id'])) {
+        $stmt = $pdo->prepare("SELECT * FROM locations WHERE location_id = :id AND is_active = true LIMIT 1");
+        $stmt->execute([':id' => $_SESSION['last_context']['id']]);
+        $loc = $stmt->fetch();
+
+        if ($loc) {
+            return [
+                "status" => "success",
+                "matched_type" => "context_followup",
+                "location_id" => $loc['location_id'],
+                "faq_id" => null,
+                "suggested_match" => $loc['name'],
+                "reply" => krijoPergjigjeKontekstualeLokacioni($loc)
+            ];
+        }
     }
 
     if ($searchMessage === '' && !empty($cleanMessage)) {
@@ -313,31 +473,43 @@ function merrPergjigjen(PDO $pdo, string $message): array
             $stmt = $pdo->prepare("SELECT * FROM locations WHERE location_id = :id AND is_active = true LIMIT 1");
             $stmt->execute([':id' => $_SESSION['last_context']['id']]);
             $loc = $stmt->fetch();
+
             if ($loc) {
                 return [
-                    "status" => "success", "matched_type" => "context_fallback",
-                    "location_id" => $loc['location_id'], "faq_id" => null,
-                    "suggested_match" => $loc['name'], "reply" => krijoPergjigjeKontekstualeLokacioni($loc)
+                    "status" => "success",
+                    "matched_type" => "context_fallback",
+                    "location_id" => $loc['location_id'],
+                    "faq_id" => null,
+                    "suggested_match" => $loc['name'],
+                    "reply" => krijoPergjigjeKontekstualeLokacioni($loc)
                 ];
             }
         }
     }
- 
+
     if ($searchMessage === '') {
         return [
-            "status" => "empty", "matched_type" => "empty", "location_id" => null, "faq_id" => null, "suggested_match" => null,
+            "status" => "empty",
+            "matched_type" => "empty",
+            "location_id" => null,
+            "faq_id" => null,
+            "suggested_match" => null,
             "reply" => "Ju lutem shkruani një pyetje më specifike për Kolegjin AAB."
         ];
     }
- 
+
     $locResult = searchLocation($pdo, $message);
     if ($locResult) return $locResult;
- 
+
     $faqResult = searchFAQ($pdo, $message);
     if ($faqResult) return $faqResult;
- 
+
     return [
-        "status" => "not_found", "matched_type" => "unresolved", "location_id" => null, "faq_id" => null, "suggested_match" => null,
+        "status" => "not_found",
+        "matched_type" => "unresolved",
+        "location_id" => null,
+        "faq_id" => null,
+        "suggested_match" => null,
         "reply" => "Më vjen keq, nuk arrita ta gjej këtë lokacion. Provoni të shkruani më thjeshtë, p.sh: <strong>IT-DESK II</strong> ose <strong>Salla 108</strong>."
     ];
 }
