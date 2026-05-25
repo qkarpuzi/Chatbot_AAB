@@ -22,7 +22,23 @@ try {
 } catch (Exception $e) {
     die("DB connection failed: " . $e->getMessage());
 }
+// =======================
+// CHAT HISTORY / CLEAR CHAT
+// =======================
 
+if (isset($_GET['clear'])) {
+    unset($_SESSION['chat_history']);
+    header("Location: index.php");
+    exit;
+}
+
+if (!isset($_SESSION['chat_history'])) {
+    $_SESSION['chat_history'] = [];
+}
+
+// =======================
+// NORMALIZER FUNCTION
+// =======================
 
 function normalize(string $text): string
 {
@@ -52,8 +68,8 @@ function normalizeForSearch(string $text): string
         'ku', 'eshte', 'osht', 'gjendet', 'gjindet', 'ndodhet',
         'mund', 'muj', 'me', 'ta', 'te', 'tek', 'ne', 'nga',
         'per', 'a', 'e', 'i', 'jam', 'dua', 'du', 'kerkoj',
-        'gjej', 'shkoj', 'tregom', 'tregome', 'me', 'kallxo',
-        'kallxom', 'qka', 'cfare'
+        'gjej', 'shkoj', 'tregom', 'tregome', 'kallxo',
+        'kallxom', 'qka', 'cfare', 'si', 'ma', 'mi', 'nje', 'ni'
     ];
 
     $words = explode(' ', $text);
@@ -151,7 +167,7 @@ function krijoTekstinEKatit($floorRaw): string
 // NATURAL LOCATION REPLY
 // =======================
 
-function krijoPergjigjeLokacioni(array $location, string $intro): string
+function krijoPergjigjeLokacioni(array $location): string
 {
     $nameRaw = trim($location['name'] ?? 'lokacioni i kërkuar');
     $name = htmlspecialchars($nameRaw);
@@ -178,14 +194,11 @@ function krijoPergjigjeLokacioni(array $location, string $intro): string
 
     if (
         strpos($nameLower, 'salla') !== false ||
-        strpos($nameLower, 'salle') !== false ||
-        strpos($nameLower, 'a ') === 0 ||
-        strpos($nameLower, 'b ') === 0
+        strpos($nameLower, 'salle') !== false
     ) {
         $isRoom = true;
     }
 
-    // Për salla
     if ($isRoom) {
         if ($room !== null) {
             $reply = "Salla <strong>{$room}</strong> ndodhet {$floorText} të Kolegjit AAB.";
@@ -199,12 +212,9 @@ function krijoPergjigjeLokacioni(array $location, string $intro): string
             $reply .= " Kjo sallë është e regjistruar në databazën e orientimit të universitetit.";
         }
 
-        $reply .= "<br><br>Mund të më pyesni edhe për një sallë tjetër, për shembull: <strong>Ku është salla 108?</strong>";
-
         return $reply;
     }
 
-    // Për lokacione të tjera
     $reply = "<strong>{$name}</strong> ndodhet {$floorText} të Kolegjit AAB.";
 
     if ($room !== null) {
@@ -216,8 +226,6 @@ function krijoPergjigjeLokacioni(array $location, string $intro): string
     } else {
         $reply .= " Ky lokacion është pjesë e databazës së orientimit në universitet.";
     }
-
-    $reply .= "<br><br>Nëse keni nevojë, mund të më pyesni edhe për një lokacion tjetër brenda Kolegjit AAB.";
 
     return $reply;
 }
@@ -279,190 +287,246 @@ function tableExists(PDO $pdo, string $tableName): bool
 }
 
 // =======================
-// SMART CHATBOT SEARCH
+// DEFAULT FAQ ANSWERS
 // =======================
 
-function merrPergjigjen(PDO $pdo, string $message): array
+function merrPergjigjeDefaultFAQ(string $message): ?array
+{
+    $msg = normalize($message);
+
+    $faqList = [
+        [
+            'patterns' => [
+                'cka eshte ky chatbot',
+                'cfare eshte ky chatbot',
+                'qka eshte chatbot',
+                'cka eshte aab chatbot'
+            ],
+            'answer' => 'Ky chatbot është një asistent virtual për orientim brenda Kolegjit AAB. Ai ndihmon studentët dhe vizitorët të gjejnë salla, zyra, administratë, bibliotekë dhe lokacione të tjera.'
+        ],
+        [
+            'patterns' => [
+                'si funksionon chatboti',
+                'si punon chatboti',
+                'qysh funksionon chatboti',
+                'si funksionon sistemi'
+            ],
+            'answer' => 'Chatboti analizon pyetjen tuaj, kërkon në databazën e lokacioneve dhe fjalëve kyçe, pastaj kthen përgjigjen më të përshtatshme. Nëse nuk e kupton pyetjen, ajo ruhet që administratori ta përmirësojë sistemin.'
+        ],
+        [
+            'patterns' => [
+                'per cka sherben ky sistem',
+                'qka ben ky sistem',
+                'pse sherben ky chatbot',
+                'qellimi i chatbotit'
+            ],
+            'answer' => 'Ky sistem shërben për orientim në universitet. Qëllimi i tij është t’i ndihmojë përdoruesit të gjejnë më shpejt lokacionet brenda Kolegjit AAB.'
+        ],
+        [
+            'patterns' => [
+                'cka mund te pyes',
+                'cfare mund te pyes',
+                'qka mundem me pyet',
+                'me cka mund te me ndihmosh'
+            ],
+            'answer' => 'Mund të më pyesni për lokacione brenda Kolegjit AAB, për shembull: “Ku është salla 108?”, “Ku gjendet administrata?”, “Ku është biblioteka?” ose “Ku mund ta marr vërtetimin?”.'
+        ]
+    ];
+
+    $bestAnswer = null;
+    $bestScore = 0;
+
+    foreach ($faqList as $faq) {
+        foreach ($faq['patterns'] as $pattern) {
+            $score = llogaritNgjashmerine($msg, $pattern);
+
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestAnswer = $faq['answer'];
+            }
+        }
+    }
+
+    if ($bestAnswer !== null && $bestScore >= 70) {
+        return [
+            "status" => "success",
+            "matched_type" => "faq_default",
+            "location_id" => null,
+            "suggested_match" => null,
+            "reply" => htmlspecialchars($bestAnswer)
+        ];
+    }
+
+    return null;
+}
+
+// =======================
+// DATABASE FAQ SEARCH
+// =======================
+
+function merrPergjigjeFAQ(PDO $pdo, string $message): ?array
+{
+    if (!tableExists($pdo, 'faq_questions')) {
+        return merrPergjigjeDefaultFAQ($message);
+    }
+
+    try {
+        $stmt = $pdo->query("
+            SELECT faq_id, question, normalized_question, answer
+            FROM faq_questions
+            WHERE is_active = true
+        ");
+
+        $faqs = $stmt->fetchAll();
+
+        $bestFaq = null;
+        $bestScore = 0;
+
+        foreach ($faqs as $faq) {
+            $question = $faq['question'] ?? '';
+            $normalizedQuestion = $faq['normalized_question'] ?? $question;
+
+            $score1 = llogaritNgjashmerine($message, $question);
+            $score2 = llogaritNgjashmerine($message, $normalizedQuestion);
+
+            $score = max($score1, $score2);
+
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestFaq = $faq;
+            }
+        }
+
+        if ($bestFaq && $bestScore >= 70) {
+            return [
+                "status" => "success",
+                "matched_type" => "faq",
+                "location_id" => null,
+                "suggested_match" => $bestFaq['question'],
+                "reply" => htmlspecialchars($bestFaq['answer'])
+            ];
+        }
+    } catch (Exception $e) {
+        return merrPergjigjeDefaultFAQ($message);
+    }
+
+    return merrPergjigjeDefaultFAQ($message);
+}
+
+// =======================
+// LOCATION SEARCH
+// =======================
+
+function merrPergjigjeLokacion(PDO $pdo, string $message): ?array
 {
     $searchMessage = normalizeForSearch($message);
 
     if ($searchMessage === '') {
-        return [
-            "status" => "empty",
-            "matched_type" => "empty",
-            "location_id" => null,
-            "suggested_match" => null,
-            "reply" => "Ju lutem shkruani një pyetje për lokacionet në Kolegjin AAB."
-        ];
+        return null;
     }
-
-    // =====================================================
-    // 1. SEARCH IN KEYWORDS
-    // =====================================================
-
-    $stmt = $pdo->query("
-        SELECT 
-            k.keyword_id,
-            k.keyword,
-            k.normalized_keyword,
-            k.intent_type,
-            k.location_id,
-
-            l.location_id AS loc_id,
-            l.name,
-            l.description,
-            l.floor,
-            l.room_number,
-            l.x_coord,
-            l.y_coord,
-            l.is_active
-        FROM keywords k
-        INNER JOIN locations l ON k.location_id = l.location_id
-        WHERE l.is_active = true
-    ");
-
-    $keywords = $stmt->fetchAll();
 
     $bestKeywordMatch = null;
     $bestKeywordScore = 0;
 
-    foreach ($keywords as $row) {
-        $keyword = $row['keyword'] ?? '';
-        $normalizedKeyword = $row['normalized_keyword'] ?? $keyword;
-
-        $score1 = llogaritNgjashmerine($searchMessage, $keyword);
-        $score2 = llogaritNgjashmerine($searchMessage, $normalizedKeyword);
-
-        $score = max($score1, $score2);
-
-        if ($score > $bestKeywordScore) {
-            $bestKeywordScore = $score;
-            $bestKeywordMatch = $row;
-        }
-    }
-
-    if ($bestKeywordMatch && $bestKeywordScore >= 85) {
-        return [
-            "status" => "success",
-            "matched_type" => "keyword_fuzzy",
-            "location_id" => $bestKeywordMatch['loc_id'],
-            "suggested_match" => $bestKeywordMatch['name'],
-            "reply" => krijoPergjigjeLokacioni(
-                $bestKeywordMatch,
-                "Po, e kuptova pyetjen tuaj dhe e gjeta lokacionin përkatës."
-            )
-        ];
-    }
-
-    // =====================================================
-    // 2. SEARCH IN LOCATIONS
-    // =====================================================
-
-    $stmt = $pdo->query("
-        SELECT *
-        FROM locations
-        WHERE is_active = true
-    ");
-
-    $locations = $stmt->fetchAll();
-
-    $bestLocationMatch = null;
-    $bestLocationScore = 0;
-
-    foreach ($locations as $row) {
-        $name = $row['name'] ?? '';
-        $description = $row['description'] ?? '';
-        $roomNumber = $row['room_number'] ?? '';
-
-        $scoreName = llogaritNgjashmerine($searchMessage, $name);
-        $scoreDesc = llogaritNgjashmerine($searchMessage, $description);
-        $scoreRoom = 0;
-
-        if (!empty($roomNumber) && $roomNumber != '0') {
-            $scoreRoom = llogaritNgjashmerine($searchMessage, $roomNumber);
-        }
-
-        $score = max($scoreName, $scoreRoom, (int)($scoreDesc / 2));
-
-        if ($score > $bestLocationScore) {
-            $bestLocationScore = $score;
-            $bestLocationMatch = $row;
-        }
-    }
-
-    if ($bestLocationMatch && $bestLocationScore >= 85) {
-        return [
-            "status" => "success",
-            "matched_type" => "location_fuzzy",
-            "location_id" => $bestLocationMatch['location_id'],
-            "suggested_match" => $bestLocationMatch['name'],
-            "reply" => krijoPergjigjeLokacioni(
-                $bestLocationMatch,
-                "E gjeta lokacionin që po kërkoni në databazën e Kolegjit AAB."
-            )
-        ];
-    }
-
-    // =====================================================
-    // 3. SEARCH IN TRAINING EXAMPLES
-    // =====================================================
-
-    if (tableExists($pdo, 'training_examples')) {
+    try {
         $stmt = $pdo->query("
             SELECT 
-                t.example_id,
-                t.user_question,
-                t.normalized_question,
-                t.answer_type,
-                t.location_id,
+                k.keyword_id,
+                k.keyword,
+                k.normalized_keyword,
+                k.intent_type,
+                k.location_id,
 
                 l.location_id AS loc_id,
                 l.name,
                 l.description,
                 l.floor,
-                l.room_number
-            FROM training_examples t
-            LEFT JOIN locations l ON t.location_id = l.location_id
-            WHERE t.approved = true
+                l.room_number,
+                l.x_coord,
+                l.y_coord,
+                l.is_active
+            FROM keywords k
+            INNER JOIN locations l ON k.location_id = l.location_id
+            WHERE l.is_active = true
         ");
 
-        $examples = $stmt->fetchAll();
+        $keywords = $stmt->fetchAll();
 
-        $bestExample = null;
-        $bestExampleScore = 0;
+        foreach ($keywords as $row) {
+            $keyword = $row['keyword'] ?? '';
+            $normalizedKeyword = $row['normalized_keyword'] ?? $keyword;
 
-        foreach ($examples as $row) {
-            $q1 = $row['user_question'] ?? '';
-            $q2 = $row['normalized_question'] ?? $q1;
-
-            $score1 = llogaritNgjashmerine($searchMessage, $q1);
-            $score2 = llogaritNgjashmerine($searchMessage, $q2);
+            $score1 = llogaritNgjashmerine($searchMessage, $keyword);
+            $score2 = llogaritNgjashmerine($searchMessage, $normalizedKeyword);
 
             $score = max($score1, $score2);
 
-            if ($score > $bestExampleScore) {
-                $bestExampleScore = $score;
-                $bestExample = $row;
+            if ($score > $bestKeywordScore) {
+                $bestKeywordScore = $score;
+                $bestKeywordMatch = $row;
             }
         }
-
-        if ($bestExample && $bestExampleScore >= 80 && !empty($bestExample['loc_id'])) {
-            return [
-                "status" => "success",
-                "matched_type" => "training_example",
-                "location_id" => $bestExample['loc_id'],
-                "suggested_match" => $bestExample['name'],
-                "reply" => krijoPergjigjeLokacioni(
-                    $bestExample,
-                    "E kuptova pyetjen nga shembujt e trajnuar më parë."
-                )
-            ];
-        }
+    } catch (Exception $e) {
+        $bestKeywordMatch = null;
+        $bestKeywordScore = 0;
     }
 
-    // =====================================================
-    // 4. MEDIUM SCORE - SUGGESTION
-    // =====================================================
+    $bestLocationMatch = null;
+    $bestLocationScore = 0;
+
+    try {
+        $stmt = $pdo->query("
+            SELECT *
+            FROM locations
+            WHERE is_active = true
+        ");
+
+        $locations = $stmt->fetchAll();
+
+        foreach ($locations as $row) {
+            $name = $row['name'] ?? '';
+            $description = $row['description'] ?? '';
+            $roomNumber = $row['room_number'] ?? '';
+
+            $scoreName = llogaritNgjashmerine($searchMessage, $name);
+            $scoreDesc = llogaritNgjashmerine($searchMessage, $description);
+            $scoreRoom = 0;
+
+            if (!empty($roomNumber) && $roomNumber != '0') {
+                $scoreRoom = llogaritNgjashmerine($searchMessage, $roomNumber);
+            }
+
+            $score = max($scoreName, $scoreRoom, (int)($scoreDesc / 2));
+
+            if ($score > $bestLocationScore) {
+                $bestLocationScore = $score;
+                $bestLocationMatch = $row;
+            }
+        }
+    } catch (Exception $e) {
+        $bestLocationMatch = null;
+        $bestLocationScore = 0;
+    }
+
+    if ($bestKeywordMatch && $bestKeywordScore >= 80) {
+        return [
+            "status" => "success",
+            "matched_type" => "location_keyword",
+            "location_id" => $bestKeywordMatch['loc_id'],
+            "suggested_match" => $bestKeywordMatch['name'],
+            "reply" => krijoPergjigjeLokacioni($bestKeywordMatch)
+        ];
+    }
+
+    if ($bestLocationMatch && $bestLocationScore >= 80) {
+        return [
+            "status" => "success",
+            "matched_type" => "location",
+            "location_id" => $bestLocationMatch['location_id'],
+            "suggested_match" => $bestLocationMatch['name'],
+            "reply" => krijoPergjigjeLokacioni($bestLocationMatch)
+        ];
+    }
 
     if ($bestKeywordMatch && $bestKeywordScore >= 55) {
         return [
@@ -484,9 +548,38 @@ function merrPergjigjen(PDO $pdo, string $message): array
         ];
     }
 
-    // =====================================================
-    // 5. NOT FOUND
-    // =====================================================
+    return null;
+}
+
+// =======================
+// MAIN BOT LOGIC
+// =======================
+
+function merrPergjigjen(PDO $pdo, string $message): array
+{
+    $message = trim($message);
+
+    if ($message === '') {
+        return [
+            "status" => "empty",
+            "matched_type" => "empty",
+            "location_id" => null,
+            "suggested_match" => null,
+            "reply" => "Ju lutem shkruani një pyetje."
+        ];
+    }
+
+    $faqResponse = merrPergjigjeFAQ($pdo, $message);
+
+    if ($faqResponse !== null) {
+        return $faqResponse;
+    }
+
+    $locationResponse = merrPergjigjeLokacion($pdo, $message);
+
+    if ($locationResponse !== null) {
+        return $locationResponse;
+    }
 
     return [
         "status" => "not_found",
@@ -495,12 +588,13 @@ function merrPergjigjen(PDO $pdo, string $message): array
         "suggested_match" => null,
         "reply" => "
             Më vjen keq, nuk arrita ta kuptoj saktë pyetjen tuaj.<br><br>
-            Mund ta shkruani pyetjen në një formë më të qartë, për shembull:<br>
-            • Ku është biblioteka?<br>
-            • Ku gjendet administrata?<br>
+            Mund të më pyesni për lokacione ose informata rreth chatbotit, për shembull:<br>
             • Ku është salla 108?<br>
-            • Ku mund ta marr vërtetimin?<br><br>
-            Pyetja juaj do të ruhet për analizë, në mënyrë që chatboti të përmirësohet në të ardhmen.
+            • Ku gjendet administrata?<br>
+            • Ku është biblioteka?<br>
+            • Çka është ky chatbot?<br>
+            • Si funksionon chatboti?<br><br>
+            Pyetja juaj do të ruhet për analizë, që sistemi të përmirësohet.
         "
     ];
 }
@@ -509,19 +603,28 @@ function merrPergjigjen(PDO $pdo, string $message): array
 // INPUT HANDLING
 // =======================
 
-$user_raw_message = $_POST['message'] ?? "";
-$bot_reply_output = "";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($_POST['message'] ?? ''))) {
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($user_raw_message))) {
-
+    $user_raw_message = trim($_POST['message']);
     $response = merrPergjigjen($pdo, $user_raw_message);
-    $bot_reply_output = $response['reply'];
+
+    $_SESSION['chat_history'][] = [
+        'role' => 'user',
+        'content' => htmlspecialchars($user_raw_message),
+        'time' => date('H:i')
+    ];
+
+    $_SESSION['chat_history'][] = [
+        'role' => 'bot',
+        'content' => $response['reply'],
+        'time' => date('H:i')
+    ];
+
+    if (count($_SESSION['chat_history']) > 40) {
+        $_SESSION['chat_history'] = array_slice($_SESSION['chat_history'], -40);
+    }
 
     $clean_msg = normalize($user_raw_message);
-
-    // =====================================================
-    // SAVE CHAT MESSAGE
-    // =====================================================
 
     try {
         $stmt = $pdo->prepare("
@@ -538,12 +641,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($user_raw_message))) {
             ':matched_location_id' => $response['location_id']
         ]);
     } catch (Exception $e) {
-        // Nuk e ndalim chatbotin nëse ruajtja e bisedës dështon
+        // Chatboti vazhdon edhe nëse ruajtja dështon
     }
-
-    // =====================================================
-    // SAVE UNRESOLVED OR SUGGESTION QUESTION
-    // =====================================================
 
     if ($response['status'] === 'not_found' || $response['status'] === 'suggestion') {
         try {
@@ -561,9 +660,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($user_raw_message))) {
                 ':status' => $response['status'] === 'suggestion' ? 'suggested' : 'pending'
             ]);
         } catch (Exception $e) {
-            // Nuk e ndalim chatbotin nëse ruajtja e pyetjes dështon
+            // Chatboti vazhdon edhe nëse ruajtja dështon
         }
     }
+
+    header("Location: index.php");
+    exit;
 }
 ?>
 
@@ -574,7 +676,178 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($user_raw_message))) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AAB Chatbot</title>
     <link rel="stylesheet" href="frontend/style.css">
+
+    <style>
+        body {
+            color: #000;
+        }
+
+        .chat-area {
+            color: #000;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .chat-top-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .clear-btn {
+            background: #b60000;
+            color: #fff;
+            text-decoration: none;
+            border: none;
+            padding: 9px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .clear-btn:hover {
+            background: #8f0000;
+        }
+
+        .chat-body {
+            padding: 22px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: #f2f2f2;
+        }
+
+        .welcome-box {
+            background: #ffffff;
+            color: #000;
+            border-radius: 18px;
+            padding: 22px;
+            text-align: center;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.10);
+            margin-bottom: 10px;
+        }
+
+        .welcome-box h2,
+        .welcome-box p {
+            color: #000;
+        }
+
+        .quick-examples {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 14px;
+        }
+
+        .quick-examples span {
+            background: #f3f3f3;
+            color: #000;
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.83rem;
+        }
+
+        .chat-message {
+            width: 100%;
+            display: flex;
+            margin-bottom: 4px;
+        }
+
+        .chat-message.user {
+            justify-content: flex-end;
+        }
+
+        .chat-message.bot {
+            justify-content: flex-start;
+        }
+
+        .message-bubble {
+            max-width: 68%;
+            padding: 12px 15px;
+            border-radius: 18px;
+            color: #000;
+            font-size: 0.95rem;
+            line-height: 1.55;
+            box-shadow: 0 2px 7px rgba(0,0,0,0.14);
+            word-wrap: break-word;
+        }
+
+        .chat-message.user .message-bubble {
+            background: #e00000;
+            color: #000;
+            border-bottom-right-radius: 4px;
+        }
+
+        .chat-message.bot .message-bubble {
+            background: #ffffff;
+            color: #000;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-name {
+            font-size: 0.75rem;
+            font-weight: 800;
+            margin-bottom: 5px;
+            color: #000;
+            opacity: 0.85;
+        }
+
+        .message-text {
+            color: #000;
+            font-weight: 500;
+        }
+
+        .message-text strong {
+            color: #000;
+            font-weight: 800;
+        }
+
+        .message-time {
+            font-size: 0.70rem;
+            color: #333;
+            text-align: right;
+            margin-top: 6px;
+            opacity: 0.75;
+        }
+
+        .input-area input {
+            color: #000 !important;
+            background: #fff !important;
+        }
+
+        .input-area input::placeholder {
+            color: #555 !important;
+        }
+
+        @media (max-width: 768px) {
+            .message-bubble {
+                max-width: 88%;
+            }
+
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .chat-top-actions {
+                width: 100%;
+                justify-content: flex-end;
+            }
+        }
+    </style>
 </head>
+
 <body>
 
 <div class="app">
@@ -624,69 +897,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($user_raw_message))) {
 
                 <div>
                     <h3>Chatbot Inteligjent për Orientim në AAB</h3>
-                    <p>Jam këtu për t'ju ndihmuar të gjeni çdo lokacion në universitet.</p>
+                    <p>Pyet për salla, zyra, administratë, bibliotekë ose informata rreth chatbotit.</p>
                 </div>
+            </div>
+
+            <div class="chat-top-actions">
+                <a href="index.php?clear=1" class="clear-btn">Pastro</a>
             </div>
         </header>
 
-        <section class="chat-body">
+        <section class="chat-body" id="chatBody">
 
-            <div class="welcome-box">
-                <div class="bot-icon">
-                    <img src="frontend/images/aab-logo (2).png" alt="AAB Logo" style="width:100%; height:100%; object-fit:cover;">
-                </div>
+            <?php if (empty($_SESSION['chat_history'])): ?>
+                <div class="welcome-box">
+                    <div class="bot-icon">
+                        <img src="frontend/images/aab-logo (2).png" alt="AAB Logo" style="width:100%; height:100%; object-fit:cover;">
+                    </div>
 
-                <h2>Mirë se vini në AAB Chatbot</h2>
-                <p>Shkruani pyetjen tuaj për të marrë ndihmë rreth lokacioneve në universitet.</p>
-            </div>
-
-            <?php if (!empty($user_raw_message)): ?>
-                <div style="
-                    background:rgba(255,255,255,0.04);
-                    padding:15px;
-                    border-radius:12px;
-                    margin-bottom:15px;
-                    border:1px solid rgba(255,255,255,0.08);
-                    text-align:right;
-                ">
-                    <p style="
-                        margin:0 0 8px 0;
-                        color:var(--text-secondary);
-                        font-size:0.82rem;
-                        text-transform:uppercase;
-                    ">
-                        Pyetja juaj:
+                    <h2>Mirë se vini në AAB Chatbot</h2>
+                    <p>
+                        Shkruani pyetjen tuaj për të marrë ndihmë rreth lokacioneve në universitet.
                     </p>
 
-                    <div style="font-size:0.95rem; line-height:1.5;">
-                        <?php echo htmlspecialchars($user_raw_message); ?>
+                    <div class="quick-examples">
+                        <span>Ku është salla 108?</span>
+                        <span>Ku është biblioteka?</span>
+                        <span>Ku gjendet administrata?</span>
+                        <span>Çka është ky chatbot?</span>
                     </div>
                 </div>
             <?php endif; ?>
 
-            <?php if (!empty($bot_reply_output)): ?>
-                <div style="
-                    background:var(--card-bg);
-                    padding:15px;
-                    border-radius:12px;
-                    margin-bottom:15px;
-                    border:1px solid rgba(255,255,255,0.1);
-                    border-left:4px solid var(--primary-color);
-                ">
-                    <p style="
-                        margin:0 0 10px 0;
-                        color:var(--text-secondary);
-                        font-size:0.85rem;
-                        text-transform:uppercase;
-                    ">
-                        Përgjigja nga Chatbot:
-                    </p>
+            <?php foreach ($_SESSION['chat_history'] as $msg): ?>
+                <div class="chat-message <?php echo $msg['role'] === 'user' ? 'user' : 'bot'; ?>">
+                    <div class="message-bubble">
+                        <div class="message-name">
+                            <?php echo $msg['role'] === 'user' ? 'Ju' : 'AAB Chatbot'; ?>
+                        </div>
 
-                    <div style="font-size:0.95rem; line-height:1.6;">
-                        <?php echo $bot_reply_output; ?>
+                        <div class="message-text">
+                            <?php echo $msg['content']; ?>
+                        </div>
+
+                        <div class="message-time">
+                            <?php echo htmlspecialchars($msg['time'] ?? 'Tani'); ?>
+                        </div>
                     </div>
                 </div>
-            <?php endif; ?>
+            <?php endforeach; ?>
 
         </section>
 
@@ -708,6 +966,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($user_raw_message))) {
     </main>
 
 </div>
+
+<script>
+    const chatBody = document.getElementById("chatBody");
+
+    if (chatBody) {
+        chatBody.scrollTop = chatBody.scrollHeight;
+    }
+</script>
 
 </body>
 </html>
