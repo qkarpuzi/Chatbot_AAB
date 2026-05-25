@@ -7,6 +7,33 @@ $id = $_GET['id'] ?? null;
 if (empty($table)) {
     die("❌ Tabela nuk është specifikuar.");
 }
+
+function quoteIdentifier(string $identifier): string
+{
+    return '"' . str_replace('"', '""', $identifier) . '"';
+}
+
+function syncPrimaryKeySequence(PDO $pdo, string $table, string $pk): void
+{
+    if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $table) || !preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $pk)) {
+        return;
+    }
+
+    $tableIdent = quoteIdentifier($table);
+    $pkIdent = quoteIdentifier($pk);
+    $qualified = 'public.' . $tableIdent;
+
+    $sqlSeq = "SELECT pg_get_serial_sequence(" . $pdo->quote($qualified) . ", " . $pdo->quote($pk) . ") AS seq_name";
+    $seqRow = $pdo->query($sqlSeq)->fetch();
+    $seqName = $seqRow['seq_name'] ?? null;
+
+    if (!$seqName) {
+        return;
+    }
+
+    $sqlSetval = "SELECT setval(" . $pdo->quote($seqName) . ", COALESCE((SELECT MAX($pkIdent) FROM $tableIdent), 0) + 1, false)";
+    $pdo->query($sqlSetval);
+}
 try {
     $pk_query = "
         SELECT kcu.column_name 
@@ -90,7 +117,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $sql = "INSERT INTO $table ($colsString) VALUES ($placeholders)";
             
             $stmt = $pdo->prepare($sql);
-            $stmt->execute($values);
+            syncPrimaryKeySequence($pdo, $table, $pk);
+
+            try {
+                $stmt->execute($values);
+            } catch (PDOException $e) {
+                if (($e->getCode() === '23505' || str_contains($e->getMessage(), 'duplicate key value')) && str_contains($e->getMessage(), '(' . $pk . ')=')) {
+                    syncPrimaryKeySequence($pdo, $table, $pk);
+                    $stmt->execute($values);
+                } else {
+                    throw $e;
+                }
+            }
         }
         
         header("Location: indexadmin.php?table=$table");

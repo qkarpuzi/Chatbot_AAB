@@ -77,6 +77,41 @@ function normalizeForSearch(string $text): string
     }
     return trim(implode(' ', $filteredWords));
 }
+
+function hasStandaloneToken(string $haystack, string $token): bool
+{
+    $token = trim(mb_strtolower($token, 'UTF-8'));
+    if ($token === '') {
+        return false;
+    }
+
+    return (bool)preg_match(
+        '/(?:^|[\s\-\/])' . preg_quote($token, '/') . '(?:$|[\s\-\/])/iu',
+        mb_strtolower($haystack, 'UTF-8')
+    );
+}
+
+function extractVariantToken(string $text): ?string
+{
+    $normalized = normalize($text);
+    if ($normalized === '') {
+        return null;
+    }
+
+    preg_match_all('/\b([0-9]+|i|ii|iii|iv|v|vi|vii|viii|ix|x)\b/iu', $normalized, $m);
+    if (empty($m[1])) {
+        return null;
+    }
+
+    $token = end($m[1]);
+    return mb_strtoupper((string)$token, 'UTF-8');
+}
+
+function normalizeCompactCode(string $text): string
+{
+    $text = normalize($text);
+    return (string)preg_replace('/[^a-z0-9]/iu', '', $text);
+}
  
 // =======================
 // FUZZY SIMILARITY + EXACT MATCH CHECK
@@ -150,6 +185,14 @@ function krijoPergjigjeKontekstualeLokacioni(array $location): string
     $floorText = krijoTekstinEKatit($location['floor'] ?? null);
     return "Siç e përmendëm, <strong>{$name}</strong> gjendet ekzaktësisht <strong>{$floorText}</strong>.<br><br>A keni nevojë për ndonjë udhëzim tjetër?";
 }
+
+function krijoPergjigjeSugjeruese(array $location): string
+{
+    $name = htmlspecialchars(trim($location['name'] ?? 'lokacion i panjohur'));
+    $floorText = krijoTekstinEKatit($location['floor'] ?? null);
+
+    return "Nuk jam plotësisht i sigurt, por ndoshta keni menduar për <strong>{$name}</strong> që ndodhet {$floorText}.";
+}
  
 // =======================
 // FAQ SEARCH
@@ -188,106 +231,264 @@ function searchFAQ(PDO $pdo, string $message): ?array
 function searchLocation(PDO $pdo, string $message): ?array
 {
     $searchMessage = normalizeForSearch($message);
-    if ($searchMessage === '') return null;
-    
     $cleanMessage = normalize($message);
 
-    // KONTROLLI I SQARIMIT (Disambiguation)
-    if (strpos($cleanMessage, 'shkenca') === false && strpos($cleanMessage, 'komp') === false && 
+    if ($searchMessage === '' && $cleanMessage === '') {
+        return null;
+    }
+
+    $queryText = $searchMessage !== '' ? $searchMessage : $cleanMessage;
+    $variantToken = extractVariantToken($cleanMessage);
+
+    // Keep structural prefixes (e.g., A-LAB/B-LAB) that can be lost by stop-word filtering.
+    if (preg_match('/\b[a-z]\s*lab\b/iu', $cleanMessage) || mb_strpos($cleanMessage, '-') !== false) {
+        $queryText = $cleanMessage;
+    }
+
+    if (
+        strpos($cleanMessage, 'shkenca') === false && strpos($cleanMessage, 'komp') === false &&
         strpos($cleanMessage, 'jurid') === false && strpos($cleanMessage, 'ekonom') === false &&
         strpos($cleanMessage, 'gjuhe') === false && strpos($cleanMessage, 'mjekes') === false &&
-        strpos($cleanMessage, 'qendror') === false) {
-
+        strpos($cleanMessage, 'qendror') === false
+    ) {
         if (mb_strpos($cleanMessage, 'dekanat') !== false) {
             $_SESSION['last_context']['waiting_for_clarification'] = 'dekanat';
             return [
-                "status" => "clarification", "matched_type" => "disambiguation_prompt",
-                "location_id" => null, "faq_id" => null, "suggested_match" => null,
-                "reply" => "Cilin dekanat po kërkoni? (p.sh., Shkenca Kompjuterike, Juridik, Ekonomik, etj.)"
+                'status' => 'clarification', 'matched_type' => 'disambiguation_prompt',
+                'location_id' => null, 'faq_id' => null, 'suggested_match' => null,
+                'reply' => 'Cilin dekanat po kërkoni? (p.sh., Shkenca Kompjuterike, Juridik, Ekonomik, etj.)'
             ];
         }
+
         if (mb_strpos($cleanMessage, 'administrat') !== false) {
             $_SESSION['last_context']['waiting_for_clarification'] = 'administrata';
             return [
-                "status" => "clarification", "matched_type" => "disambiguation_prompt",
-                "location_id" => null, "faq_id" => null, "suggested_match" => null,
-                "reply" => "Për cilën administratë bëhet fjalë? (p.sh., Administratën Qendrore apo të ndonjë Fakulteti specifik?)"
+                'status' => 'clarification', 'matched_type' => 'disambiguation_prompt',
+                'location_id' => null, 'faq_id' => null, 'suggested_match' => null,
+                'reply' => 'Për cilën administratë bëhet fjalë? (p.sh., Administratën Qendrore apo të ndonjë Fakulteti specifik?)'
             ];
         }
+
         if (mb_strpos($cleanMessage, 'referent') !== false) {
             $_SESSION['last_context']['waiting_for_clarification'] = 'referent';
             return [
-                "status" => "clarification", "matched_type" => "disambiguation_prompt",
-                "location_id" => null, "faq_id" => null, "suggested_match" => null,
-                "reply" => "Për cilët referentë po pyesni? (Ju lutem specifikoni fakultetin, p.sh., Shkenca Kompjuterike, Fakulteti Ekonomik, etj.)"
+                'status' => 'clarification', 'matched_type' => 'disambiguation_prompt',
+                'location_id' => null, 'faq_id' => null, 'suggested_match' => null,
+                'reply' => 'Për cilët referentë po pyesni? (Ju lutem specifikoni fakultetin, p.sh., Shkenca Kompjuterike, Fakulteti Ekonomik, etj.)'
             ];
         }
     }
- 
-    // Kontrolli ekzakt për numra dhomash
-    preg_match_all('/\d+/', $message, $matches);
-    if (!empty($matches[0]) && count($matches[0]) == 1 && mb_strlen($searchMessage) <= 4) {
-        foreach ($matches[0] as $nr) {
-            $stmt = $pdo->prepare("SELECT * FROM locations WHERE name = :nr AND is_active = true LIMIT 1");
-            $stmt->execute([':nr' => $nr]);
-            $exactRoom = $stmt->fetch();
-            if ($exactRoom) {
+
+    $stmt = $pdo->prepare(" 
+        SELECT
+            l.location_id,
+            l.name,
+            l.description,
+            l.floor,
+            l.room_number,
+            l.is_active,
+            COALESCE(string_agg(DISTINCT k.keyword, ' '), '') AS keyword_blob,
+            COALESCE(string_agg(DISTINCT COALESCE(k.normalized_keyword, ''), ' '), '') AS normalized_keyword_blob
+        FROM locations l
+        LEFT JOIN keywords k ON k.location_id = l.location_id
+        WHERE l.is_active = true
+          AND (
+              lower(l.name) LIKE :like_query
+              OR lower(COALESCE(l.description, '')) LIKE :like_query
+              OR lower(COALESCE(l.room_number, '')) = :query_exact
+              OR lower(COALESCE(l.room_number, '')) LIKE :query_prefix
+              OR EXISTS (
+                  SELECT 1
+                  FROM keywords k2
+                  WHERE k2.location_id = l.location_id
+                    AND (
+                        lower(k2.keyword) LIKE :like_query
+                        OR lower(COALESCE(k2.normalized_keyword, '')) LIKE :like_query
+                    )
+              )
+          )
+        GROUP BY l.location_id, l.name, l.description, l.floor, l.room_number, l.is_active
+        LIMIT 120
+    ");
+
+    $queryLower = mb_strtolower($queryText, 'UTF-8');
+    $stmt->execute([
+        ':like_query' => '%' . str_replace(' ', '%', $queryLower) . '%',
+        ':query_exact' => $queryLower,
+        ':query_prefix' => $queryLower . '%',
+    ]);
+    $candidates = $stmt->fetchAll();
+
+    if (empty($candidates)) {
+        return null;
+    }
+
+    $queryCompact = normalizeCompactCode($queryText);
+    $splitMatches = [];
+    $isCompactCodeQuery = (bool)preg_match('/^[a-z]{1,3}\d{1,3}$/iu', $queryCompact);
+    $canUseTextSplit = (mb_strlen($queryText, 'UTF-8') >= 3 && $variantToken === null);
+
+    foreach ($candidates as $candidate) {
+        $candidateName = (string)($candidate['name'] ?? '');
+        $candidateCompact = normalizeCompactCode($candidateName);
+        $candidateNorm = normalize($candidateName);
+
+        if ($isCompactCodeQuery && $candidateCompact !== '' && strpos($candidateCompact, $queryCompact) === 0 && $candidateCompact !== $queryCompact) {
+            $splitMatches[] = $candidate;
+            continue;
+        }
+
+        if ($canUseTextSplit) {
+            if (preg_match('/^' . preg_quote($queryText, '/') . '[\s\-–\/]+([0-9]+|i|ii|iii|iv|v|vi|vii|viii|ix|x)\b/iu', $candidateNorm)) {
+                $splitMatches[] = $candidate;
+            }
+        }
+    }
+
+    if (count($splitMatches) === 1) {
+        $only = $splitMatches[0];
+        return [
+            'status' => 'success',
+            'matched_type' => 'location_split_single',
+            'location_id' => $only['location_id'],
+            'faq_id' => null,
+            'suggested_match' => $only['name'],
+            'reply' => krijoPergjigjeLokacioni($only)
+        ];
+    }
+
+    if (count($splitMatches) > 1) {
+        usort($splitMatches, function (array $a, array $b) {
+            return strnatcasecmp((string)($a['name'] ?? ''), (string)($b['name'] ?? ''));
+        });
+
+        $_SESSION['last_context']['waiting_for_clarification'] = $queryText;
+
+        $top = array_slice($splitMatches, 0, 8);
+        $options = [];
+        foreach ($top as $row) {
+            $options[] = '<strong>' . htmlspecialchars((string)($row['name'] ?? '')) . '</strong>';
+        }
+
+        $remaining = count($splitMatches) - count($top);
+        $title = $isCompactCodeQuery ? mb_strtoupper($queryCompact, 'UTF-8') : $queryText;
+        $reply = 'Për <strong>' . htmlspecialchars($title) . '</strong> gjeta disa lokacione: ' . implode(', ', $options) . '.';
+
+        if ($remaining > 0) {
+            $reply .= ' dhe ' . $remaining . ' të tjera.';
+        }
+
+        if ($isCompactCodeQuery) {
+            $reply .= '<br><br>Ju lutem shkruani kodin e plotë, p.sh: <strong>' . htmlspecialchars(mb_strtoupper($queryCompact, 'UTF-8')) . '-103</strong>.';
+        } else {
+            $reply .= '<br><br>Ju lutem specifikoni variantin e plotë (p.sh. me numrin ose romakun në fund).';
+        }
+
+        return [
+            'status' => 'clarification',
+            'matched_type' => 'location_split_disambiguation',
+            'location_id' => null,
+            'faq_id' => null,
+            'suggested_match' => null,
+            'reply' => $reply
+        ];
+    }
+
+    $queryHasHelpDesk = mb_strpos($cleanMessage, 'help desk') !== false || mb_strpos($cleanMessage, 'it help desk') !== false;
+
+    foreach ($candidates as &$row) {
+        $name = (string)($row['name'] ?? '');
+        $description = (string)($row['description'] ?? '');
+        $keywordBlob = (string)($row['keyword_blob'] ?? '');
+        $normalizedKeywordBlob = (string)($row['normalized_keyword_blob'] ?? '');
+        $roomNumber = trim((string)($row['room_number'] ?? ''));
+
+        $scoreName = llogaritNgjashmerine($queryText, $name);
+        $scoreDesc = llogaritNgjashmerine($queryText, $description);
+        $scoreKeyword = max(
+            llogaritNgjashmerine($queryText, $keywordBlob),
+            llogaritNgjashmerine($queryText, $normalizedKeywordBlob)
+        );
+
+        $score = max($scoreName, $scoreKeyword, (int)($scoreDesc / 2));
+
+        $nameNorm = normalize($name);
+        $allNorm = normalize($name . ' ' . $keywordBlob . ' ' . $normalizedKeywordBlob);
+
+        if ($nameNorm === $queryText) {
+            $score += 140;
+        }
+
+        if (hasStandaloneToken($allNorm, $queryText)) {
+            $score += 70;
+        }
+
+        if ($queryHasHelpDesk && mb_strpos($allNorm, 'help desk') !== false) {
+            $score += 45;
+        }
+
+        if ($variantToken !== null) {
+            $variantLower = mb_strtolower($variantToken, 'UTF-8');
+
+            if (hasStandaloneToken($allNorm, $variantLower) || ($roomNumber !== '' && mb_strtoupper($roomNumber, 'UTF-8') === $variantToken)) {
+                $score += 170;
+            } else {
+                if (preg_match('/\b([0-9]+|i|ii|iii|iv|v|vi|vii|viii|ix|x)\b/iu', $allNorm)) {
+                    $score -= 120;
+                }
+            }
+        }
+
+        $row['_score'] = $score;
+    }
+    unset($row);
+
+    usort($candidates, function (array $a, array $b) {
+        return ($b['_score'] ?? 0) <=> ($a['_score'] ?? 0);
+    });
+
+    $best = $candidates[0] ?? null;
+    if (!$best) {
+        return null;
+    }
+
+    if ($queryHasHelpDesk && $variantToken === null && count($candidates) > 1) {
+        $second = $candidates[1];
+        $firstName = normalize((string)($best['name'] ?? ''));
+        $secondName = normalize((string)($second['name'] ?? ''));
+
+        if (mb_strpos($firstName, 'help desk') !== false && mb_strpos($secondName, 'help desk') !== false) {
+            if (abs((int)($best['_score'] ?? 0) - (int)($second['_score'] ?? 0)) <= 18) {
                 return [
-                    "status" => "success", "matched_type" => "exact_name",
-                    "location_id" => $exactRoom['location_id'], "faq_id" => null,
-                    "suggested_match" => $exactRoom['name'], "reply" => krijoPergjigjeLokacioni($exactRoom)
+                    'status' => 'clarification',
+                    'matched_type' => 'location_disambiguation',
+                    'location_id' => null,
+                    'faq_id' => null,
+                    'suggested_match' => null,
+                    'reply' => 'Po i gjej të dyja: <strong>' . htmlspecialchars((string)$best['name']) . '</strong> dhe <strong>' . htmlspecialchars((string)$second['name']) . '</strong>.<br><br>Ju lutem specifikoni: <strong>IT Help Desk I</strong> apo <strong>IT Help Desk II</strong>?'
                 ];
             }
         }
     }
- 
-    // Kontrolli përmes Keywords
-    $stmt = $pdo->query("
-        SELECT k.*, l.location_id AS loc_id, l.name, l.description, l.floor, l.is_active
-        FROM keywords k
-        INNER JOIN locations l ON k.location_id = l.location_id
-        WHERE l.is_active = true
-    ");
-    $keywords = $stmt->fetchAll();
- 
-    $bestKeywordMatch = null;
-    $bestKeywordScore = 0;
-    foreach ($keywords as $row) {
-        $score = llogaritNgjashmerine($searchMessage, $row['keyword'] ?? '');
-        if ($score > $bestKeywordScore) {
-            $bestKeywordScore = $score;
-            $bestKeywordMatch = $row;
-        }
-    }
-    if ($bestKeywordMatch && $bestKeywordScore >= 70) {
+
+    $bestScore = (int)($best['_score'] ?? 0);
+
+    if ($bestScore >= 105) {
         return [
-            "status" => "success", "matched_type" => "keyword_fuzzy",
-            "location_id" => $bestKeywordMatch['loc_id'], "faq_id" => null,
-            "suggested_match" => $bestKeywordMatch['name'], "reply" => krijoPergjigjeLokacioni($bestKeywordMatch)
+            'status' => 'success', 'matched_type' => 'location_db_ranked',
+            'location_id' => $best['location_id'], 'faq_id' => null,
+            'suggested_match' => $best['name'], 'reply' => krijoPergjigjeLokacioni($best)
         ];
     }
- 
-    // Kontrolli direkt në tabelën Locations
-    $stmt = $pdo->query("SELECT * FROM locations WHERE is_active = true");
-    $locations = $stmt->fetchAll();
- 
-    $bestLocationMatch = null;
-    $bestLocationScore = 0;
-    foreach ($locations as $row) {
-        $scoreName = llogaritNgjashmerine($searchMessage, $row['name'] ?? '');
-        if ($scoreName > $bestLocationScore) {
-            $bestLocationScore = $scoreName;
-            $bestLocationMatch = $row;
-        }
-    }
-    if ($bestLocationMatch && $bestLocationScore >= 70) {
+
+    if ($bestScore >= 72) {
         return [
-            "status" => "success", "matched_type" => "location_fuzzy",
-            "location_id" => $bestLocationMatch['location_id'], "faq_id" => null,
-            "suggested_match" => $bestLocationMatch['name'], "reply" => krijoPergjigjeLokacioni($bestLocationMatch)
+            'status' => 'suggestion', 'matched_type' => 'location_db_suggestion',
+            'location_id' => $best['location_id'], 'faq_id' => null,
+            'suggested_match' => $best['name'], 'reply' => krijoPergjigjeSugjeruese($best)
         ];
     }
- 
+
     return null;
 }
  
