@@ -10,7 +10,7 @@ if (!isset($_SESSION['last_context'])) {
         'type' => null,
         'id' => null,
         'name_or_query' => null,
-        'waiting_for_clarification' => null // Ruhen gjendjet: 'dekanat', 'administrata', 'referent', 'salla', 'zyra', 'laborator', 'tualet'
+        'waiting_for_clarification' => null // Ruhen gjendjet: 'dekanat', 'referent', 'salla', 'zyra', 'laborator', 'tualet'
     ];
 }
  
@@ -193,7 +193,8 @@ function searchLocation(PDO $pdo, string $message): ?array
     if ($searchMessage === '') return null;
 
     // ----------------------------------------------------
-    // STRATEGJIA: NDALIMI I FJALËVE TË PËRGJITHSHME (DISAMBIGUATION)
+    // STRATEGJIA: INTEGRAL CLARIFICATION CHECK (DISAMBIGUATION)
+    // Kontrollojmë nëse ka ndonjë fjalë specifike përveç rrënjëve të përgjithshme
     // ----------------------------------------------------
     $kaSpecifikim = preg_match('/\d+/', $cleanMessage) || 
                     strpos($cleanMessage, 'shkenca') !== false || strpos($cleanMessage, 'komp') !== false || 
@@ -201,28 +202,34 @@ function searchLocation(PDO $pdo, string $message): ?array
                     strpos($cleanMessage, 'gjuhe') !== false || strpos($cleanMessage, 'mjekes') !== false ||
                     strpos($cleanMessage, 'qendror') !== false || strpos($cleanMessage, 'help') !== false || 
                     strpos($cleanMessage, 'desk') !== false || strpos($cleanMessage, 'it') !== false ||
-                    strpos($cleanMessage, 'edu') !== false || strpos($cleanMessage, 'anatom') !== false;
+                    strpos($cleanMessage, 'edu') !== false || strpos($cleanMessage, 'anatom') !== false ||
+                    strpos($cleanMessage, 'kryesore') !== false || strpos($cleanMessage, 'diplom') !== false ||
+                    strpos($cleanMessage, 'karrier') !== false || strpos($cleanMessage, 'financ') !== false ||
+                    strpos($cleanMessage, 'protokol') !== false;
 
     if (!$kaSpecifikim) {
-        if ($cleanMessage === 'lab' || $cleanMessage === 'laborator' || $cleanMessage === 'laboratori' || $cleanMessage === 'labi' || $cleanMessage === 'ku eshte labi' || $cleanMessage === 'ku eshte laboratori') {
+        // Kontrolli për laboratorë (edhe nëse përsëritet: "lab lab", "laboratori")
+        if (preg_match('/^(lab|laborator|laboratori|labi)(\s+(lab|laborator|laboratori|labi))*$/', $searchMessage)) {
             $_SESSION['last_context']['waiting_for_clarification'] = 'laborator';
             return [
                 "status" => "clarification", "matched_type" => "disambiguation_prompt", "location_id" => null, "faq_id" => null, "suggested_match" => null,
                 "reply" => "Cilin laborator po kërkoni? Ju lutem specifikoni emrin ose fakultetin (p.sh., Laboratori i Anatomisë, EDU-LAB, Laboratori 1 i Shkencave Kompjuterike, etj.)."
             ];
         }
-        if ($cleanMessage === 'salla' || $cleanMessage === 'salle' || $cleanMessage === 'sallat' || $cleanMessage === 'ku eshte salla' || $cleanMessage === 'ku gjendet salla') {
+        // Kontrolli për salla (edhe nëse përsëritet: "salla salla salla")
+        if (preg_match('/^(salle|salla|sallat)(\s+(salle|salla|sallat))*$/', $searchMessage)) {
             $_SESSION['last_context']['waiting_for_clarification'] = 'salla';
             return [
                 "status" => "clarification", "matched_type" => "disambiguation_prompt", "location_id" => null, "faq_id" => null, "suggested_match" => null,
                 "reply" => "Cilën sallë po kërkoni? Ju lutem specifikoni numrin e sallës (p.sh., Salla 108, Salla 202, etj.)."
             ];
         }
-        if ($cleanMessage === 'zyra' || $cleanMessage === 'zyre' || $cleanMessage === 'zyrat' || $cleanMessage === 'ku eshte zyra') {
+        // Kontrolli i ri inteligjent për zyra (p.sh. "zyra", "zyra zyra", "zyra zyra zyra")
+        if (preg_match('/^(zyre|zyra|zyrat)(\s+(zyre|zyra|zyrat))*$/', $searchMessage)) {
             $_SESSION['last_context']['waiting_for_clarification'] = 'zyra';
             return [
                 "status" => "clarification", "matched_type" => "disambiguation_prompt", "location_id" => null, "faq_id" => null, "suggested_match" => null,
-                "reply" => "Për cilën zyrë bëhet fjalë? Ju lutem specifikoni emrin ose funksionin e saj (p.sh., Zyra e Financave, Zyra e Protokollit, etj.)."
+                "reply" => "Për cilën zyrë bëhet fjalë? Ju lutem specifikoni emrin ose funksionin e saj (p.sh., Zyra e Financave, Zyra e Karrierës, Zyra e Diplomave, etj.)."
             ];
         }
         if (mb_strpos($cleanMessage, 'dekanat') !== false) {
@@ -230,13 +237,6 @@ function searchLocation(PDO $pdo, string $message): ?array
             return [
                 "status" => "clarification", "matched_type" => "disambiguation_prompt", "location_id" => null, "faq_id" => null, "suggested_match" => null,
                 "reply" => "Cilin dekanat po kërkoni? (p.sh., Shkenca Kompjuterike, Fakulteti Juridik, Fakulteti Ekonomik, etj.)"
-            ];
-        }
-        if (mb_strpos($cleanMessage, 'administrat') !== false) {
-            $_SESSION['last_context']['waiting_for_clarification'] = 'administrata';
-            return [
-                "status" => "clarification", "matched_type" => "disambiguation_prompt", "location_id" => null, "faq_id" => null, "suggested_match" => null,
-                "reply" => "Për cilën administratë bëhet fjalë? (p.sh., Administratën Qendrore apo administratën e ndonjë Fakulteti specifik?)"
             ];
         }
         if (mb_strpos($cleanMessage, 'referent') !== false) {
@@ -253,6 +253,11 @@ function searchLocation(PDO $pdo, string $message): ?array
                 "reply" => "Në cilin kat po kërkoni tualet? Ju lutem specifikoni katin (p.sh., katin përdhesë, katin 1, katin 2, etj.)."
             ];
         }
+    }
+
+    // NËSE PYETET THJESHT "ADMINISTRATA" (pa asnjë specifikim), E FORCOJMË TË KËRKOJË KRYESOREN
+    if (!$kaSpecifikim && (mb_strpos($cleanMessage, 'administrat') !== false || $searchMessage === 'admin')) {
+        $searchMessage = 'administrata qendrore kryesore'; 
     }
  
     // Kontrolli ekzakt për numra dhomash të pastra
@@ -341,7 +346,7 @@ function merrPergjigjen(PDO $pdo, string $message): array
     if ($searchMessage === '') {
         return [
             "status" => "empty", "matched_type" => "empty", "location_id" => null, "faq_id" => null, "suggested_match" => null,
-            "reply" => "Ju lutem shkruani një lokacion ose pyetje specifike për Kolegjim AAB."
+            "reply" => "Ju lutem shkruani një lokacion ose pyetje specifike për Kolegjin AAB."
         ];
     }
  
