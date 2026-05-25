@@ -45,8 +45,9 @@ function normalize(string $text): string
     $text = mb_strtolower($text, 'UTF-8');
 
     $text = str_replace(
-        ['ë', 'Ë', 'ç', 'Ç'],
         ['e', 'e', 'c', 'c'],
+        ['ë', 'Ë', 'ç', 'Ç'],
+        
         $text
     );
 
