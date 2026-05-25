@@ -23,44 +23,259 @@ try {
     die("DB connection failed: " . $e->getMessage());
 }
 
-// =======================
-// NORMALIZER FUNCTION
-// =======================
 
 function normalize(string $text): string
 {
     $text = mb_strtolower($text, 'UTF-8');
 
-    // Heq shenjat e pikësimit, por i ruan shkronjat shqipe
-    $text = preg_replace('/[^\p{L}\p{N}\s]/u', '', $text);
+    $text = str_replace(
+        ['ë', 'Ë', 'ç', 'Ç'],
+        ['e', 'e', 'c', 'c'],
+        $text
+    );
 
-    // Heq hapësirat e tepërta
+    $text = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $text);
     $text = preg_replace('/\s+/', ' ', $text);
 
     return trim($text);
 }
 
 // =======================
-// PROFESSIONAL REPLY FORMAT
+// NORMALIZER FOR SEARCH
+// =======================
+
+function normalizeForSearch(string $text): string
+{
+    $text = normalize($text);
+
+    $stopWords = [
+        'ku', 'eshte', 'osht', 'gjendet', 'gjindet', 'ndodhet',
+        'mund', 'muj', 'me', 'ta', 'te', 'tek', 'ne', 'nga',
+        'per', 'a', 'e', 'i', 'jam', 'dua', 'du', 'kerkoj',
+        'gjej', 'shkoj', 'tregom', 'tregome', 'me', 'kallxo',
+        'kallxom', 'qka', 'cfare'
+    ];
+
+    $words = explode(' ', $text);
+    $filteredWords = [];
+
+    foreach ($words as $word) {
+        $word = trim($word);
+
+        if ($word !== '' && !in_array($word, $stopWords)) {
+            $filteredWords[] = $word;
+        }
+    }
+
+    return trim(implode(' ', $filteredWords));
+}
+
+// =======================
+// FUZZY SIMILARITY
+// =======================
+
+function llogaritNgjashmerine(string $text1, string $text2): int
+{
+    $text1 = normalizeForSearch($text1);
+    $text2 = normalizeForSearch($text2);
+
+    if ($text1 === '' || $text2 === '') {
+        return 0;
+    }
+
+    $score = 0;
+
+    if ($text1 === $text2) {
+        $score += 100;
+    }
+
+    if (strpos($text1, $text2) !== false || strpos($text2, $text1) !== false) {
+        $score += 70;
+    }
+
+    similar_text($text1, $text2, $percent);
+    $score += (int)$percent;
+
+    $words1 = explode(' ', $text1);
+    $words2 = explode(' ', $text2);
+
+    foreach ($words1 as $w1) {
+        foreach ($words2 as $w2) {
+            if (mb_strlen($w1, 'UTF-8') <= 2 || mb_strlen($w2, 'UTF-8') <= 2) {
+                continue;
+            }
+
+            if ($w1 === $w2) {
+                $score += 25;
+            } else {
+                $distance = levenshtein($w1, $w2);
+
+                if ($distance <= 1) {
+                    $score += 20;
+                } elseif ($distance <= 2) {
+                    $score += 15;
+                } elseif ($distance <= 3 && mb_strlen($w1, 'UTF-8') >= 6) {
+                    $score += 8;
+                }
+            }
+        }
+    }
+
+    return $score;
+}
+
+// =======================
+// FLOOR TEXT
+// =======================
+
+function krijoTekstinEKatit($floorRaw): string
+{
+    if ($floorRaw === null || $floorRaw === '') {
+        return "në një kat që nuk është specifikuar ende në databazë";
+    }
+
+    $floor = trim((string)$floorRaw);
+
+    if ($floor === '0') {
+        return "në katin përdhesë";
+    }
+
+    if ($floor === '-1') {
+        return "në bodrum";
+    }
+
+    return "në katin " . htmlspecialchars($floor);
+}
+
+// =======================
+// NATURAL LOCATION REPLY
 // =======================
 
 function krijoPergjigjeLokacioni(array $location, string $intro): string
 {
-    $name = htmlspecialchars($location['name'] ?? 'I panjohur');
-    $description = htmlspecialchars($location['description'] ?? 'Nuk ka përshkrim.');
-    $floor = htmlspecialchars((string)($location['floor'] ?? 'Nuk është specifikuar'));
-    $room = !empty($location['room_number'])
-        ? htmlspecialchars($location['room_number'])
-        : 'Nuk është specifikuar';
+    $nameRaw = trim($location['name'] ?? 'lokacioni i kërkuar');
+    $name = htmlspecialchars($nameRaw);
 
-    return "
-        {$intro}<br><br>
-        📍 <strong>Lokacioni:</strong> {$name}<br>
-        🏢 <strong>Kati:</strong> {$floor}<br>
-        🚪 <strong>Salla/Zyra:</strong> {$room}<br>
-        📝 <strong>Përshkrimi:</strong> {$description}<br><br>
-        Nëse dëshironi, mund të më pyesni edhe për një lokacion tjetër brenda Kolegjit AAB.
-    ";
+    $descriptionRaw = trim($location['description'] ?? '');
+    $description = htmlspecialchars($descriptionRaw);
+
+    $floorRaw = $location['floor'] ?? null;
+    $roomRaw = $location['room_number'] ?? null;
+
+    $floorText = krijoTekstinEKatit($floorRaw);
+
+    $room = (!empty($roomRaw) && $roomRaw != '0')
+        ? htmlspecialchars((string)$roomRaw)
+        : null;
+
+    $nameLower = normalize($nameRaw);
+
+    $isRoom = false;
+
+    if ($room !== null) {
+        $isRoom = true;
+    }
+
+    if (
+        strpos($nameLower, 'salla') !== false ||
+        strpos($nameLower, 'salle') !== false ||
+        strpos($nameLower, 'a ') === 0 ||
+        strpos($nameLower, 'b ') === 0
+    ) {
+        $isRoom = true;
+    }
+
+    // Për salla
+    if ($isRoom) {
+        if ($room !== null) {
+            $reply = "Salla <strong>{$room}</strong> ndodhet {$floorText} të Kolegjit AAB.";
+        } else {
+            $reply = "<strong>{$name}</strong> ndodhet {$floorText} të Kolegjit AAB.";
+        }
+
+        if ($description !== '') {
+            $reply .= " {$description}";
+        } else {
+            $reply .= " Kjo sallë është e regjistruar në databazën e orientimit të universitetit.";
+        }
+
+        $reply .= "<br><br>Mund të më pyesni edhe për një sallë tjetër, për shembull: <strong>Ku është salla 108?</strong>";
+
+        return $reply;
+    }
+
+    // Për lokacione të tjera
+    $reply = "<strong>{$name}</strong> ndodhet {$floorText} të Kolegjit AAB.";
+
+    if ($room !== null) {
+        $reply .= " Numri i zyrës ose sallës është <strong>{$room}</strong>.";
+    }
+
+    if ($description !== '') {
+        $reply .= " {$description}";
+    } else {
+        $reply .= " Ky lokacion është pjesë e databazës së orientimit në universitet.";
+    }
+
+    $reply .= "<br><br>Nëse keni nevojë, mund të më pyesni edhe për një lokacion tjetër brenda Kolegjit AAB.";
+
+    return $reply;
+}
+
+// =======================
+// SUGGESTION REPLY
+// =======================
+
+function krijoPergjigjeSugjeruese(array $location): string
+{
+    $nameRaw = trim($location['name'] ?? 'lokacion i panjohur');
+    $name = htmlspecialchars($nameRaw);
+
+    $floorRaw = $location['floor'] ?? null;
+    $roomRaw = $location['room_number'] ?? null;
+
+    $floorText = krijoTekstinEKatit($floorRaw);
+
+    $room = (!empty($roomRaw) && $roomRaw != '0')
+        ? htmlspecialchars((string)$roomRaw)
+        : null;
+
+    $reply = "Nuk jam plotësisht i sigurt për pyetjen tuaj, por ndoshta keni menduar për <strong>{$name}</strong>.";
+
+    if ($room !== null) {
+        $reply .= "<br><br>Ky lokacion është i regjistruar si salla/zyra <strong>{$room}</strong> dhe ndodhet {$floorText}.";
+    } else {
+        $reply .= "<br><br>Ky lokacion ndodhet {$floorText}.";
+    }
+
+    $reply .= "<br><br>Ju lutem shkruani pyetjen pak më qartë, për shembull: <strong>Ku është {$name}?</strong>";
+
+    return $reply;
+}
+
+// =======================
+// CHECK IF TABLE EXISTS
+// =======================
+
+function tableExists(PDO $pdo, string $tableName): bool
+{
+    try {
+        $stmt = $pdo->prepare("
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public'
+                AND table_name = :table_name
+            )
+        ");
+
+        $stmt->execute([
+            ':table_name' => $tableName
+        ]);
+
+        return (bool)$stmt->fetchColumn();
+    } catch (Exception $e) {
+        return false;
+    }
 }
 
 // =======================
@@ -69,19 +284,20 @@ function krijoPergjigjeLokacioni(array $location, string $intro): string
 
 function merrPergjigjen(PDO $pdo, string $message): array
 {
-    $message = normalize($message);
+    $searchMessage = normalizeForSearch($message);
 
-    if ($message === '') {
+    if ($searchMessage === '') {
         return [
             "status" => "empty",
             "matched_type" => "empty",
             "location_id" => null,
+            "suggested_match" => null,
             "reply" => "Ju lutem shkruani një pyetje për lokacionet në Kolegjin AAB."
         ];
     }
 
     // =====================================================
-    // 1. SEARCH FIRST IN KEYWORDS TABLE
+    // 1. SEARCH IN KEYWORDS
     // =====================================================
 
     $stmt = $pdo->query("
@@ -111,56 +327,13 @@ function merrPergjigjen(PDO $pdo, string $message): array
     $bestKeywordScore = 0;
 
     foreach ($keywords as $row) {
-        $keyword = normalize($row['keyword'] ?? '');
-        $normalizedKeyword = normalize($row['normalized_keyword'] ?? $row['keyword'] ?? '');
+        $keyword = $row['keyword'] ?? '';
+        $normalizedKeyword = $row['normalized_keyword'] ?? $keyword;
 
-        $score = 0;
+        $score1 = llogaritNgjashmerine($searchMessage, $keyword);
+        $score2 = llogaritNgjashmerine($searchMessage, $normalizedKeyword);
 
-        // Nëse pyetja është krejt e njëjtë me keyword
-        if ($message === $keyword || $message === $normalizedKeyword) {
-            $score += 30;
-        }
-
-        // Nëse keyword gjendet brenda pyetjes
-        if ($keyword !== '' && strpos($message, $keyword) !== false) {
-            $score += 20;
-        }
-
-        if ($normalizedKeyword !== '' && strpos($message, $normalizedKeyword) !== false) {
-            $score += 20;
-        }
-
-        // Krahasim fjalë për fjalë
-        $keywordWords = explode(" ", $keyword);
-
-        foreach ($keywordWords as $word) {
-            if (mb_strlen($word, 'UTF-8') > 2 && strpos($message, $word) !== false) {
-                $score += 4;
-            }
-        }
-
-        // Disa fjalë orientuese që përdoruesi mund t'i shkruajë
-        $commonWords = [
-            'ku',
-            'eshte',
-            'gjendet',
-            'ndodhet',
-            'salla',
-            'zyra',
-            'kati',
-            'dekanati',
-            'administrata',
-            'biblioteka',
-            'pagesa',
-            'dokumente',
-            'vertetim'
-        ];
-
-        foreach ($commonWords as $word) {
-            if (strpos($message, $word) !== false && strpos($keyword, $word) !== false) {
-                $score += 2;
-            }
-        }
+        $score = max($score1, $score2);
 
         if ($score > $bestKeywordScore) {
             $bestKeywordScore = $score;
@@ -168,20 +341,21 @@ function merrPergjigjen(PDO $pdo, string $message): array
         }
     }
 
-    if ($bestKeywordMatch && $bestKeywordScore >= 6) {
+    if ($bestKeywordMatch && $bestKeywordScore >= 85) {
         return [
             "status" => "success",
-            "matched_type" => "keyword",
+            "matched_type" => "keyword_fuzzy",
             "location_id" => $bestKeywordMatch['loc_id'],
+            "suggested_match" => $bestKeywordMatch['name'],
             "reply" => krijoPergjigjeLokacioni(
                 $bestKeywordMatch,
-                "Po, e gjeta lokacionin që lidhet me pyetjen tuaj."
+                "Po, e kuptova pyetjen tuaj dhe e gjeta lokacionin përkatës."
             )
         ];
     }
 
     // =====================================================
-    // 2. FALLBACK SEARCH IN LOCATIONS TABLE
+    // 2. SEARCH IN LOCATIONS
     // =====================================================
 
     $stmt = $pdo->query("
@@ -196,39 +370,19 @@ function merrPergjigjen(PDO $pdo, string $message): array
     $bestLocationScore = 0;
 
     foreach ($locations as $row) {
-        $name = normalize($row['name'] ?? '');
-        $description = normalize($row['description'] ?? '');
-        $roomNumber = normalize($row['room_number'] ?? '');
+        $name = $row['name'] ?? '';
+        $description = $row['description'] ?? '';
+        $roomNumber = $row['room_number'] ?? '';
 
-        $score = 0;
+        $scoreName = llogaritNgjashmerine($searchMessage, $name);
+        $scoreDesc = llogaritNgjashmerine($searchMessage, $description);
+        $scoreRoom = 0;
 
-        // Nëse emri i lokacionit gjendet direkt në pyetje
-        if ($name !== '' && strpos($message, $name) !== false) {
-            $score += 20;
+        if (!empty($roomNumber) && $roomNumber != '0') {
+            $scoreRoom = llogaritNgjashmerine($searchMessage, $roomNumber);
         }
 
-        // Nëse numri i sallës gjendet në pyetje
-        if ($roomNumber !== '' && $roomNumber !== '0' && strpos($message, $roomNumber) !== false) {
-            $score += 20;
-        }
-
-        // Krahasim sipas fjalëve të emrit
-        $nameWords = explode(" ", $name);
-
-        foreach ($nameWords as $word) {
-            if (mb_strlen($word, 'UTF-8') > 2 && strpos($message, $word) !== false) {
-                $score += 5;
-            }
-        }
-
-        // Krahasim me përshkrimin
-        $descriptionWords = explode(" ", $description);
-
-        foreach ($descriptionWords as $word) {
-            if (mb_strlen($word, 'UTF-8') > 4 && strpos($message, $word) !== false) {
-                $score += 1;
-            }
-        }
+        $score = max($scoreName, $scoreRoom, (int)($scoreDesc / 2));
 
         if ($score > $bestLocationScore) {
             $bestLocationScore = $score;
@@ -236,34 +390,117 @@ function merrPergjigjen(PDO $pdo, string $message): array
         }
     }
 
-    if ($bestLocationMatch && $bestLocationScore >= 5) {
+    if ($bestLocationMatch && $bestLocationScore >= 85) {
         return [
             "status" => "success",
-            "matched_type" => "location",
+            "matched_type" => "location_fuzzy",
             "location_id" => $bestLocationMatch['location_id'],
+            "suggested_match" => $bestLocationMatch['name'],
             "reply" => krijoPergjigjeLokacioni(
                 $bestLocationMatch,
-                "E gjeta këtë lokacion në databazën e Kolegjit AAB."
+                "E gjeta lokacionin që po kërkoni në databazën e Kolegjit AAB."
             )
         ];
     }
 
     // =====================================================
-    // 3. IF NOTHING FOUND
+    // 3. SEARCH IN TRAINING EXAMPLES
+    // =====================================================
+
+    if (tableExists($pdo, 'training_examples')) {
+        $stmt = $pdo->query("
+            SELECT 
+                t.example_id,
+                t.user_question,
+                t.normalized_question,
+                t.answer_type,
+                t.location_id,
+
+                l.location_id AS loc_id,
+                l.name,
+                l.description,
+                l.floor,
+                l.room_number
+            FROM training_examples t
+            LEFT JOIN locations l ON t.location_id = l.location_id
+            WHERE t.approved = true
+        ");
+
+        $examples = $stmt->fetchAll();
+
+        $bestExample = null;
+        $bestExampleScore = 0;
+
+        foreach ($examples as $row) {
+            $q1 = $row['user_question'] ?? '';
+            $q2 = $row['normalized_question'] ?? $q1;
+
+            $score1 = llogaritNgjashmerine($searchMessage, $q1);
+            $score2 = llogaritNgjashmerine($searchMessage, $q2);
+
+            $score = max($score1, $score2);
+
+            if ($score > $bestExampleScore) {
+                $bestExampleScore = $score;
+                $bestExample = $row;
+            }
+        }
+
+        if ($bestExample && $bestExampleScore >= 80 && !empty($bestExample['loc_id'])) {
+            return [
+                "status" => "success",
+                "matched_type" => "training_example",
+                "location_id" => $bestExample['loc_id'],
+                "suggested_match" => $bestExample['name'],
+                "reply" => krijoPergjigjeLokacioni(
+                    $bestExample,
+                    "E kuptova pyetjen nga shembujt e trajnuar më parë."
+                )
+            ];
+        }
+    }
+
+    // =====================================================
+    // 4. MEDIUM SCORE - SUGGESTION
+    // =====================================================
+
+    if ($bestKeywordMatch && $bestKeywordScore >= 55) {
+        return [
+            "status" => "suggestion",
+            "matched_type" => "suggestion",
+            "location_id" => $bestKeywordMatch['loc_id'],
+            "suggested_match" => $bestKeywordMatch['name'],
+            "reply" => krijoPergjigjeSugjeruese($bestKeywordMatch)
+        ];
+    }
+
+    if ($bestLocationMatch && $bestLocationScore >= 55) {
+        return [
+            "status" => "suggestion",
+            "matched_type" => "suggestion",
+            "location_id" => $bestLocationMatch['location_id'],
+            "suggested_match" => $bestLocationMatch['name'],
+            "reply" => krijoPergjigjeSugjeruese($bestLocationMatch)
+        ];
+    }
+
+    // =====================================================
+    // 5. NOT FOUND
     // =====================================================
 
     return [
         "status" => "not_found",
         "matched_type" => "unresolved",
         "location_id" => null,
+        "suggested_match" => null,
         "reply" => "
-            Më vjen keq, nuk arrita ta gjej saktë lokacionin që kërkuat.<br><br>
-            Ju lutem provoni ta shkruani pyetjen më qartë, për shembull:<br>
+            Më vjen keq, nuk arrita ta kuptoj saktë pyetjen tuaj.<br><br>
+            Mund ta shkruani pyetjen në një formë më të qartë, për shembull:<br>
             • Ku është biblioteka?<br>
             • Ku gjendet administrata?<br>
-            • Ku është salla A-01?<br>
+            • Ku është salla 108?<br>
             • Ku mund ta marr vërtetimin?<br><br>
-            Kjo pyetje do të ruhet për t'u analizuar nga administratori dhe për ta përmirësuar chatbotin.
+            Pyetja juaj do të ruhet për analizë, në mënyrë që chatboti të përmirësohet në të ardhmen.
         "
     ];
 }
@@ -286,38 +523,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty(trim($user_raw_message))) {
     // SAVE CHAT MESSAGE
     // =====================================================
 
-    $stmt = $pdo->prepare("
-        INSERT INTO chat_messages 
-        (user_question, bot_response, matched_type, matched_location_id)
-        VALUES 
-        (:user_question, :bot_response, :matched_type, :matched_location_id)
-    ");
-
-    $stmt->execute([
-        ':user_question' => $clean_msg,
-        ':bot_response' => strip_tags($response['reply']),
-        ':matched_type' => $response['matched_type'],
-        ':matched_location_id' => $response['location_id']
-    ]);
-
-    // =====================================================
-    // SAVE UNRESOLVED QUESTION IF BOT DID NOT FIND ANSWER
-    // =====================================================
-
-    if ($response['status'] === 'not_found') {
+    try {
         $stmt = $pdo->prepare("
-            INSERT INTO unresolved_questions
-            (user_question, normalized_question, suggested_match, status)
-            VALUES
-            (:user_question, :normalized_question, :suggested_match, :status)
+            INSERT INTO chat_messages 
+            (user_question, bot_response, matched_type, matched_location_id)
+            VALUES 
+            (:user_question, :bot_response, :matched_type, :matched_location_id)
         ");
 
         $stmt->execute([
-            ':user_question' => $user_raw_message,
-            ':normalized_question' => $clean_msg,
-            ':suggested_match' => null,
-            ':status' => 'pending'
+            ':user_question' => $clean_msg,
+            ':bot_response' => strip_tags($response['reply']),
+            ':matched_type' => $response['matched_type'],
+            ':matched_location_id' => $response['location_id']
         ]);
+    } catch (Exception $e) {
+        // Nuk e ndalim chatbotin nëse ruajtja e bisedës dështon
+    }
+
+    // =====================================================
+    // SAVE UNRESOLVED OR SUGGESTION QUESTION
+    // =====================================================
+
+    if ($response['status'] === 'not_found' || $response['status'] === 'suggestion') {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO unresolved_questions
+                (user_question, normalized_question, suggested_match, status)
+                VALUES
+                (:user_question, :normalized_question, :suggested_match, :status)
+            ");
+
+            $stmt->execute([
+                ':user_question' => $user_raw_message,
+                ':normalized_question' => $clean_msg,
+                ':suggested_match' => $response['suggested_match'],
+                ':status' => $response['status'] === 'suggestion' ? 'suggested' : 'pending'
+            ]);
+        } catch (Exception $e) {
+            // Nuk e ndalim chatbotin nëse ruajtja e pyetjes dështon
+        }
     }
 }
 ?>
